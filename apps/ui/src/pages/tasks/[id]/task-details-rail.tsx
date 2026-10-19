@@ -49,6 +49,7 @@ const API_KEY_LABELS: Record<string, string> = {
   CLAUDE_CODE_OAUTH_TOKEN: "OAuth",
   ANTHROPIC_API_KEY: "Anthropic",
   OPENROUTER_API_KEY: "OpenRouter",
+  OPENCODE_API_KEY: "OpenCode",
   // OpenAI-compatible registry providers, canonical key and aliases.
   ...Object.fromEntries(
     openAICompatibleProviders().flatMap((p) =>

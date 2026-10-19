@@ -127,6 +127,8 @@ export const REQUIRED_CRED_VARS_BY_PROVIDER: Record<SupportedProvider, readonly 
     "OPENROUTER_API_KEY",
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
+    // opencode's own Zen / Go key (`opencode/<id>` and `opencode-go/<id>`).
+    "OPENCODE_API_KEY",
     ...openAICompatibleKeyVars(),
   ],
   pi: ["ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", ...openAICompatibleKeyVars()],
@@ -400,7 +402,7 @@ function parseCodexOAuthAccess(blob: string | undefined): string | null {
  * | `claude`         | default route: Foundry / Bedrock / Vertex → gateway (`ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY`) → `CLAUDE_CODE_OAUTH_TOKEN` → `ANTHROPIC_API_KEY` | the route's own `/v1/models`; OAuth presence-only; cloud routes skipped |
  * | `claude-managed` | `ANTHROPIC_API_KEY` (managed agents always use API key + managed envs)  | Anthropic `/v1/models`         |
  * | `codex`          | `~/.codex/auth.json` (file) → `CODEX_OAUTH` (env OAuth) → `OPENAI_API_KEY` | OpenAI `/v1/models` (api-key path only) |
- * | `opencode`       | auth.json (file) → `OPENROUTER_API_KEY` → `ANTHROPIC_API_KEY` → `OPENAI_API_KEY` → each registry provider key (`NAN_API_KEY` or `HELMCODE_API_NAN`, `HELMCODE_API_KEY`) | file presence-only, otherwise provider's `/v1/models` |
+ * | `opencode`       | auth.json (file) → `OPENROUTER_API_KEY` → `ANTHROPIC_API_KEY` → `OPENAI_API_KEY` → `OPENCODE_API_KEY` (Zen / Go) → each registry provider key (`NAN_API_KEY` or `HELMCODE_API_NAN`, `HELMCODE_API_KEY`) | file presence-only, otherwise provider's `/v1/models` |
  * | `pi`             | auth.json (file) → provider API keys, including model-specific keys   | file/model-specific key presence-only, otherwise provider's `/v1/models` |
  * | `acp`            | target-specific (the ACP target process owns its own auth)              | presence-only (validated by the target process) |
  * | `pi` (bedrock)   | `MODEL_OVERRIDE=amazon-bedrock/*` → AWS SDK default credential chain    | presence-only (real check is the worker-side Bedrock enumeration) |
@@ -512,7 +514,7 @@ export async function validateProviderCredentials(
         if (status.ready) return presenceCheckOk();
         return {
           ok: false,
-          error: `No usable credential found (OPENROUTER_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, ${openAICompatibleProviders()
+          error: `No usable credential found (OPENROUTER_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENCODE_API_KEY, ${openAICompatibleProviders()
             .map((p) => p.envVar)
             .join(", ")
             .replace(/, (?=[^,]*$)/, ", or ")}).`,

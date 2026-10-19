@@ -369,6 +369,25 @@ export function buildModelsDevSeedRows(cache: ModelsDevCache): PricingSeedRow[] 
     }
   }
 
+  // ---- OpenCode Zen / Go first-party sections ---------------------------
+  // `opencode` is Zen's pay-per-token catalog; `opencode-go` is the Go
+  // subscription's. The opencode harness reaches both with OPENCODE_API_KEY and
+  // the adapter reports `opencode/<id>` / `opencode-go/<id>`. The lookup
+  // normalizer strips `opencode/`, so Zen rows stay bare; the Go rows keep the
+  // `opencode-go/` prefix because the two sections list 20 of the same model ids
+  // at different rates (the prefix is what keeps them apart — see
+  // ROUTING_PREFIXES_BY_PROVIDER in `pricing-normalize.ts`). `tiers` /
+  // `context_over_200k` blocks are not projected (no per-context token class),
+  // so every context length bills at the section's base rate.
+  for (const [id, model] of Object.entries(cache.opencode?.models ?? {})) {
+    if (!model?.cost) continue;
+    add(id, projectCostBlock("opencode", id, model.cost));
+  }
+  for (const [id, model] of Object.entries(cache["opencode-go"]?.models ?? {})) {
+    if (!model?.cost) continue;
+    add(id, projectCostBlock("opencode", `opencode-go/${id}`, model.cost));
+  }
+
   // ---- OpenAI-compatible registry providers ($0 flat-rate subscriptions) --
   // pi and opencode run these as `<provider>/<id>`. The models.dev `nan`
   // section and the registry-synthesized `helmcode` section

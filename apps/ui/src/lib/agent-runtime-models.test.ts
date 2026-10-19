@@ -461,3 +461,35 @@ describe("NaN and Helmcode on the open harnesses", () => {
     expect(findKnownModel("helmcode/not-a-model-yet")?.providerId).toBe("helmcode");
   });
 });
+
+describe("opencode Go subscription group", () => {
+  const catalog = live({
+    "opencode-go": {
+      "deepseek-v4-flash": { name: "DeepSeek V4 Flash", cost: { input: 0.22, output: 0.66 } },
+    },
+  });
+
+  test("lists `opencode-go/<id>` ids for the opencode harness only", () => {
+    const go = modelGroupsForHarness("opencode", [], {}, null, catalog).find(
+      (g) => g.provider === "OpenCode Go",
+    );
+    expect(go).toMatchObject({ requiredKey: "OPENCODE_API_KEY", enabled: false });
+    // The live row is merged over the bundled snapshot, so assert the shape.
+    const ids = go?.models.map((m) => m.id) ?? [];
+    expect(ids).toContain("opencode-go/deepseek-v4-flash");
+    expect(ids.every((id) => id.startsWith("opencode-go/"))).toBe(true);
+    // pi cannot reach opencode's own routes.
+    expect(
+      modelGroupsForHarness("pi", [], {}, null, catalog).some((g) => g.provider === "OpenCode Go"),
+    ).toBe(false);
+  });
+
+  test("gates on OPENCODE_API_KEY, not the routable keys", () => {
+    const enabled = (envPresence: Record<string, boolean>) =>
+      modelGroupsForHarness("opencode", [], envPresence, null, catalog).find(
+        (g) => g.provider === "OpenCode Go",
+      )?.enabled;
+    expect(enabled({ OPENCODE_API_KEY: true })).toBe(true);
+    expect(enabled({ OPENROUTER_API_KEY: true })).toBe(false);
+  });
+});

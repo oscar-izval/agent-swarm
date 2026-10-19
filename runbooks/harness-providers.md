@@ -8,7 +8,7 @@ Operational rules for editing or adding harness providers (claude, codex, openco
 |----------|--------------------|---------|-------|
 | Claude Code | `claude` | `ClaudeAdapter` | CLI by default; optional Agent SDK transport |
 | Codex | `codex` | `CodexAdapter` | Starts a fresh `codex app-server` for each task. OpenAI/ChatGPT OAuth |
-| opencode | `opencode` | `OpencodeAdapter` | Spawns `opencode` CLI; OpenRouter primary, plus NaN (`nan/*`) and Helmcode (`helmcode/*`); agent-swarm plugin auto-injected. See [harness-configuration § Opencode](/docs/guides/harness-configuration#opencode) and [NaN and Helmcode](#nan-and-helmcode-pi-opencode) below |
+| opencode | `opencode` | `OpencodeAdapter` | Spawns `opencode` CLI; OpenRouter primary, plus NaN (`nan/*`), Helmcode (`helmcode/*`) and opencode's own Zen / Go routes (`opencode/*`, `opencode-go/*` with `OPENCODE_API_KEY`); agent-swarm plugin auto-injected. See [harness-configuration § Opencode](/docs/guides/harness-configuration#opencode), [OpenCode Zen / Go](#opencode-zen--go-opencode) and [NaN and Helmcode](#nan-and-helmcode-pi-opencode) below |
 | pi-mono | `pi` | `PiMonoAdapter` | In-process library; OpenRouter, Anthropic, NaN (`nan/*`), Helmcode (`helmcode/*`), or Amazon Bedrock (via `MODEL_OVERRIDE=amazon-bedrock/*` — see Bedrock auth below) |
 | Devin | `devin` | `DevinAdapter` | Cloud-managed via Cognition `/sessions` API |
 | Claude Managed | `claude-managed` | `ClaudeManagedAdapter` | Anthropic managed sandbox; SSE relay |
@@ -64,6 +64,56 @@ on `pi`, `opencode` and the ACP `opencode` target only; `claude` and `codex` rej
   `MODEL_TIER_PI_*` and `MODEL_TIER_OPENCODE_*` (see
   [model-tiers.md](./model-tiers.md)).
 - **`latest:` aliases** do not cover these providers.
+
+## OpenCode Zen / Go (opencode)
+
+opencode ships its own hosted models, split across two models.dev providers that
+share one key, `OPENCODE_API_KEY`. Point a worker at either route:
+
+```
+HARNESS_PROVIDER=opencode
+OPENCODE_API_KEY=<key>
+MODEL_OVERRIDE=opencode-go/deepseek-v4-flash   # Go subscription
+# or MODEL_OVERRIDE=opencode/glm-4.7           # Zen, pay-per-token
+```
+
+| Route | Section (models.dev) | Seeded pricing key | Auth |
+|---|---|---|---|
+| Zen | `opencode` | `<model>` (bare) | `OPENCODE_API_KEY` |
+| Go | `opencode-go` | `opencode-go/<model>` | `OPENCODE_API_KEY` |
+
+- **Key precedence**: an `opencode/*` or `opencode-go/*` model selects
+  `OPENCODE_API_KEY` and nothing else — the runner's model-aware credential
+  filter (`getModelAwareCredentialVars`) never falls back to
+  `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` for these prefixes, and
+  `checkOpencodeCredentials` accepts `OPENCODE_API_KEY` on both the
+  model-conditional and the any-of path. The key pools and rotates like every
+  other credential var (`CREDENTIAL_POOL_VARS`), and
+  `deriveProviderFromKeyType("OPENCODE_API_KEY")` tags `api_key_status.provider`
+  as `opencode`. Other opencode models keep today's precedence
+  (OpenRouter → Anthropic → OpenAI), with `OPENCODE_API_KEY` last.
+- **auth.json**: `opencode auth login` (`~/.local/share/opencode/auth.json`) still
+  satisfies every opencode model, including Zen / Go, so an auth-file worker
+  needs no env key. The env key is what the swarm itself can pool and track.
+- **Pricing**: `buildModelsDevSeedRows` projects the `opencode` section (Zen,
+  rows bare) and the `opencode-go` section (Go, rows prefixed
+  `opencode-go/<model>`) under provider `opencode`, skipping entries with no
+  cost block. `ROUTING_PREFIXES_BY_PROVIDER.opencode` strips `opencode/` so a
+  Zen id collapses onto its bare row; it deliberately does **not** strip
+  `opencode-go/`, because models.dev lists 20 of the same model ids under both
+  sections at different per-token rates (`deepseek-v4-pro` is 1.74/3.84 on Zen,
+  0.66/1.98 on Go) — the prefix keeps the two rate rows distinct.
+- **Go caveat (open question)**: the Go subscription is a flat monthly plan, so
+  the models.dev per-token rates are a *reference attribution* for cost
+  reporting, not the invoice. We keep them (no invented $0 rows, no new
+  `PricingTokenClass`) and report a Go session as `costSource: "pricing-table"`
+  at those rates. Decide before anyone budgets against it: whether Go sessions
+  should instead record a flat subscription cost. `tiers` / `context_over_200k`
+  cost blocks are not projected (no per-context token class), so every context
+  length bills at the section's base rate.
+- **Reasoning effort**: opencode's Zen / Go ids declare their own effort values
+  in models.dev; whether the swarm offers `max` for them is the separate
+  reasoning-effort change, not this one.
 
 ## Grok (`grok`)
 

@@ -21,6 +21,12 @@ describe("modelVendor: NaN and Helmcode are routes, the maker keeps its mark", (
     expect(modelVendor("nanx/glm5.3-flash")).toBeNull();
   });
 
+  test("opencode's own Zen / Go routes are routes too", () => {
+    expect(modelVendor("opencode/glm-4.7")).toBe("zai");
+    expect(modelVendor("opencode-go/deepseek-v4-flash")).toBe("deepseek");
+    expect(modelVendor("opencode-go/qwen3.7-max")).toBeNull();
+  });
+
   test("existing ids keep their maker", () => {
     expect(modelVendor("glm-4.6")).toBe("zai");
     expect(modelVendor("z-ai/glm-4.6")).toBe("zai");

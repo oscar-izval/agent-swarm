@@ -85,6 +85,7 @@ describe("getModelsCatalog", () => {
     expect(Object.keys(result.providers.openrouter?.models ?? {}).length).toBeGreaterThan(0);
     expect(Object.keys(result.providers.anthropic?.models ?? {}).length).toBeGreaterThan(0);
     expect(Object.keys(result.providers.opencode?.models ?? {}).length).toBeGreaterThan(0);
+    expect(Object.keys(result.providers["opencode-go"]?.models ?? {}).length).toBeGreaterThan(0);
     expect(result.providers.nan?.models["glm5.3-flash"]).toBeDefined();
     expect(Object.keys(result.providers.helmcode?.models ?? {}).sort()).toEqual([
       "deepseek-v4-flash",

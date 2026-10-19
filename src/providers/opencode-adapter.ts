@@ -99,6 +99,9 @@ function opencodeModelToCredKey(modelStr: string | undefined): string | null {
     if (provider === "anthropic") return "ANTHROPIC_API_KEY";
     if (provider === "openrouter") return "OPENROUTER_API_KEY";
     if (provider === "openai") return "OPENAI_API_KEY";
+    // opencode's own Zen endpoints: `opencode/<id>` (pay-per-token) and
+    // `opencode-go/<id>` (the Go subscription) both take OPENCODE_API_KEY.
+    if (provider === "opencode" || provider === "opencode-go") return "OPENCODE_API_KEY";
     // OpenAI-compatible registry providers (`nan`, `helmcode`).
     const direct = openAICompatibleProvider(provider);
     if (direct) return direct.envVar;
@@ -121,6 +124,8 @@ const OPENCODE_ANY_KEY_VARS = [
   "OPENROUTER_API_KEY",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
+  // opencode's own Zen / Go key.
+  "OPENCODE_API_KEY",
   ...openAICompatibleKeyVars(),
 ];
 
@@ -132,8 +137,8 @@ const OPENCODE_ANY_KEY_VARS = [
  *      provider's key is required (a registry provider also accepts its key
  *      aliases: `nan/*` takes `HELMCODE_API_NAN`).
  *   3. Otherwise any one of OPENROUTER_API_KEY / ANTHROPIC_API_KEY /
- *      OPENAI_API_KEY / a registry provider key (canonical or alias)
- *      suffices.
+ *      OPENAI_API_KEY / OPENCODE_API_KEY (Zen and Go) / a registry provider
+ *      key (canonical or alias) suffices.
  */
 export function checkOpencodeCredentials(
   env: Record<string, string | undefined>,
@@ -167,6 +172,7 @@ export function checkOpencodeCredentials(
       "OPENROUTER_API_KEY",
       "ANTHROPIC_API_KEY",
       "OPENAI_API_KEY",
+      "OPENCODE_API_KEY",
       ...openAICompatibleProviders().map((p) => p.envVar),
       authFile,
     ],
@@ -174,6 +180,7 @@ export function checkOpencodeCredentials(
       "OPENROUTER_API_KEY",
       "ANTHROPIC_API_KEY",
       "OPENAI_API_KEY",
+      "OPENCODE_API_KEY",
       ...openAICompatibleKeyLabels(),
     ].join(
       " / ",

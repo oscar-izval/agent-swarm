@@ -17,6 +17,8 @@ A model released for Claude Code or Codex becomes usable by tasks with no code c
 
 Offline or with an empty table, every reader falls back to the committed `src/be/modelsdev-cache.json` snapshot.
 
+Only the picker-reachable providers are projected: OpenRouter, Anthropic, OpenAI, Amazon Bedrock, OpenCode Zen (`opencode`), OpenCode Go (`opencode-go`) and the OpenAI-compatible registry providers. Each is one entry in `CATALOG_PROVIDER_IDS` (`src/be/models-catalog.ts`); a provider models.dev lists then gets its rows on the next refresh.
+
 ## What reads the catalog
 
 Model pickers, codex and Claude model lists, context windows, pricing, reasoning efforts, Claude shortnames (`opus` → newest Opus id) and `latest:` tier aliases. Workers keep a TTL-cached copy fetched from the API, so a model added after a worker booted is visible on its next poll.

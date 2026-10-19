@@ -37,8 +37,15 @@ import type { PricingProvider } from "../types";
  */
 const ROUTING_PREFIXES_BY_PROVIDER: Record<PricingProvider, readonly string[]> = {
   // opencode routes via opencode-server which proxies to openrouter, anthropic,
-  // openai, … — strip whichever proxy prefix the user picked.
-  opencode: ["openrouter/", "github-copilot/"],
+  // openai, … — strip whichever proxy prefix the user picked. `opencode/` is
+  // opencode's own pay-per-token Zen route (models.dev section `opencode`);
+  // stripping it lands on the bare model id those rows are seeded with.
+  //
+  // `opencode-go/` (the Go subscription section) is deliberately NOT stripped:
+  // models.dev lists 20 of the same model ids under both sections at different
+  // per-token rates (e.g. `deepseek-v4-pro` is 1.74/3.84 on Zen, 0.66/1.98 on
+  // Go), so the prefix is what keeps the two rate rows distinct.
+  opencode: ["opencode/", "openrouter/", "github-copilot/"],
   // pi-mono can hit openrouter mirrors, the github-copilot proxy, or native
   // anthropic/openai/google providers.
   pi: ["openrouter/", "github-copilot/"],

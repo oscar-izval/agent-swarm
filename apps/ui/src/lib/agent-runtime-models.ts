@@ -92,7 +92,7 @@ export type SnapshotProviderId =
   | "amazon-bedrock"
   | OpenAICompatibleProviderId;
 
-type CatalogProviderId = SnapshotProviderId | "opencode" | "deepseek";
+type CatalogProviderId = SnapshotProviderId | "opencode" | "opencode-go" | "deepseek";
 
 interface CachedReasoningOption {
   type: string;
@@ -493,6 +493,41 @@ export interface LiveBedrockStatus {
   error?: string;
 }
 
+/**
+ * OpenCode's Go subscription (models.dev section `opencode-go`), a sibling of
+ * its pay-per-token Zen section. The opencode harness reaches it as
+ * `opencode-go/<model>` with `OPENCODE_API_KEY`, so the group is offered to the
+ * opencode harness only and gated on that key. models.dev lists the section, so
+ * the models come from the live catalog (bundled-snapshot fallback).
+ */
+function opencodeGoGroup(
+  configs: SwarmConfig[] | undefined,
+  envPresence: Record<string, boolean> | undefined,
+  liveCatalog?: LiveModelsCatalog | null,
+): ModelGroup {
+  const label =
+    sectionOf(liveCatalog, "opencode-go")?.name ??
+    sectionOf(CACHE, "opencode-go")?.name ??
+    "OpenCode Go";
+  const models: ModelOption[] = Object.values(runtimeSectionModels("opencode-go", liveCatalog))
+    .map((m) => ({
+      id: `opencode-go/${m.id}`,
+      label: modelDisplayName(m.name) ?? m.id,
+      provider: label,
+      providerId: null,
+      requiredKey: "OPENCODE_API_KEY",
+      ...catalogFacts(m),
+      reasoningLevels: reasoningLevelsFor("opencode", m.id, m),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  return {
+    provider: label,
+    models,
+    requiredKey: "OPENCODE_API_KEY",
+    enabled: hasRuntimeCredential("OPENCODE_API_KEY", configs, envPresence),
+  };
+}
+
 export function modelGroupsForHarness(
   harness: LocalHarnessProvider,
   configs: SwarmConfig[] | undefined,
@@ -545,6 +580,11 @@ export function modelGroupsForHarness(
       enabled: hasRuntimeCredential(meta.requiredKey, configs, envPresence),
     };
   });
+
+  // opencode can also reach its own Go subscription models.
+  if (harness === "opencode") {
+    return [...snapshotGroups, opencodeGoGroup(configs, envPresence, liveCatalog)];
+  }
 
   // For the pi harness, also expose Amazon Bedrock models.
   if (harness === "pi") {

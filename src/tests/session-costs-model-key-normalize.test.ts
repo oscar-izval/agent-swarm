@@ -101,6 +101,20 @@ describe("normalizeModelKey()", () => {
     );
   });
 
+  test("strips opencode's own Zen prefix `opencode/`", () => {
+    // `opencode/<id>` is Zen's pay-per-token route; its rows are seeded bare.
+    expect(normalizeModelKey("opencode", "opencode/glm-4.7")).toBe("glm-4.7");
+  });
+
+  test("keeps the `opencode-go/` prefix so Go rates stay distinct from Zen", () => {
+    // models.dev lists 20 of the same ids under both `opencode` and
+    // `opencode-go` at different rates; folding them onto one bare key would
+    // price a Go session at Zen rates.
+    expect(normalizeModelKey("opencode", "opencode-go/deepseek-v4-pro")).toBe(
+      "opencode-go/deepseek-v4-pro",
+    );
+  });
+
   test("strips pi routing prefix `github-copilot/`", () => {
     expect(normalizeModelKey("pi", "github-copilot/gpt-5.4")).toBe("gpt-5.4");
   });
@@ -233,6 +247,57 @@ describe("Phase 2 fix — POST /api/session-costs normalizes routing prefixes", 
     expect(body.cost.costSource).toBe("pricing-table");
     expect(body.cost.totalCostUsd).toBeCloseTo(3.0, 5);
     expect(body.cost.model).toBe("github-copilot/gpt-5.4");
+  });
+
+  test("opencode Zen and Go ids resolve to their own rows for the same model", async () => {
+    // Same model id under both models.dev sections at different rates: the Zen
+    // row is bare, the Go row keeps the `opencode-go/` prefix (seed-pricing.ts).
+    for (const [model, input, output] of [
+      ["deepseek-v4-pro", 1.74, 3.84],
+      ["opencode-go/deepseek-v4-pro", 0.66, 1.98],
+    ] as const) {
+      await insertPricingRow({
+        provider: "opencode",
+        model,
+        tokenClass: "input",
+        effectiveFrom: 1,
+        pricePerMillionUsd: input,
+      });
+      await insertPricingRow({
+        provider: "opencode",
+        model,
+        tokenClass: "output",
+        effectiveFrom: 1,
+        pricePerMillionUsd: output,
+      });
+    }
+
+    const costFor = async (sessionId: string, model: string): Promise<CostResponse> => {
+      const res = await authedFetch(`/api/session-costs`, {
+        method: "POST",
+        body: JSON.stringify({
+          sessionId,
+          agentId: testAgent.id,
+          totalCostUsd: 0,
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          model,
+          provider: "opencode",
+          durationMs: 1_000,
+          numTurns: 1,
+        }),
+      });
+      expect(res.status).toBe(201);
+      return (await res.json()) as CostResponse;
+    };
+
+    const zen = await costFor("opencode-zen-1", "opencode/deepseek-v4-pro");
+    expect(zen.cost.costSource).toBe("pricing-table");
+    expect(zen.cost.totalCostUsd).toBeCloseTo(1.74 + 3.84, 5);
+
+    const go = await costFor("opencode-go-1", "opencode-go/deepseek-v4-pro");
+    expect(go.cost.costSource).toBe("pricing-table");
+    expect(go.cost.totalCostUsd).toBeCloseTo(0.66 + 1.98, 5);
   });
 
   test("claude `claude-opus-4-7` (no prefix) still resolves — regression guard", async () => {

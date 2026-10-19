@@ -85,6 +85,7 @@ const KEY_TYPE_META: Record<string, KeyTypeMeta> = {
   ANTHROPIC_API_KEY: { label: "Anthropic API Key", icon: "anthropic" },
   CLAUDE_CODE_OAUTH_TOKEN: { label: "Claude OAuth", icon: "anthropic" },
   OPENROUTER_API_KEY: { label: "OpenRouter API Key", icon: "openrouter" },
+  OPENCODE_API_KEY: { label: "OpenCode API Key", icon: null },
   OPENAI_API_KEY: { label: "OpenAI API Key", icon: "openai" },
   CODEX_OAUTH: { label: "Codex OAuth", icon: "openai" },
   // OpenAI-compatible registry providers. An alias (HELMCODE_API_NAN) is

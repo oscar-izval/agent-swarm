@@ -220,6 +220,7 @@ opencode checks credentials in this priority order:
 | **OpenRouter API key** (recommended) | `OPENROUTER_API_KEY` | Access 100+ models via [openrouter.ai](https://openrouter.ai) |
 | **Anthropic API key** | `ANTHROPIC_API_KEY` | Direct Anthropic API billing |
 | **OpenAI API key** | `OPENAI_API_KEY` | Direct OpenAI API billing |
+| **OpenCode Zen / Go key** | `OPENCODE_API_KEY` | opencode's own hosted models — Zen (`opencode/<id>`, pay-per-token) and the Go subscription (`opencode-go/<id>`). Pinned by those model prefixes |
 | **NaN API key** | `NAN_API_KEY` (alias `HELMCODE_API_NAN`) | Flat-rate NaN models. See [NaN and Helmcode](#nan-and-helmcode) |
 | **Helmcode API key** | `HELMCODE_API_KEY` | Flat-rate Helmcode models. See [NaN and Helmcode](#nan-and-helmcode) |
 | **Auth file** | `~/.local/share/opencode/auth.json` | Native opencode CLI auth file |
@@ -235,11 +236,12 @@ At least one credential source is required. The Docker entrypoint validates this
 | `OPENROUTER_BASE_URL` | No | `https://openrouter.ai/api/v1` | Route OpenRouter provider and session-summary traffic through an OpenAI-compatible gateway |
 | `ANTHROPIC_API_KEY` | One of* | — | Anthropic API key for Claude models |
 | `OPENAI_API_KEY` | One of* | — | OpenAI API key for GPT models |
+| `OPENCODE_API_KEY` | One of* | — | opencode's own Zen / Go key for `opencode/<id>` and `opencode-go/<id>` models. Comma-separated values form a pool |
 | `NAN_API_KEY` | One of* | — | NaN API key for `nan/<id>` models. `HELMCODE_API_NAN` is accepted as an alias; `NAN_API_KEY` wins when both are set. Comma-separated values form a pool |
 | `HELMCODE_API_KEY` | One of* | — | Helmcode API key for `helmcode/<id>` models. Comma-separated values form a pool |
 | `OPENCODE_SDK_PATH` | No | Global npm root | Absolute path to `@opencode/sdk/dist/index.js`, when it is not under `/usr/lib/node_modules` or `/usr/local/lib/node_modules` |
 
-\* At least one credential source is required (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `NAN_API_KEY`, `HELMCODE_API_KEY`, or `~/.local/share/opencode/auth.json`).
+\* At least one credential source is required (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENCODE_API_KEY`, `NAN_API_KEY`, `HELMCODE_API_KEY`, or `~/.local/share/opencode/auth.json`).
 
 ### Model Selection
 
@@ -250,8 +252,21 @@ The default model is `openrouter/qwen/qwen3-coder-flash`. Set `MODEL_OVERRIDE` t
 | OpenRouter | `openrouter/qwen/qwen3-coder-flash` | Default. See [OpenRouter model catalog](https://openrouter.ai/models) |
 | Anthropic | `anthropic/claude-sonnet-4-6` | Requires `ANTHROPIC_API_KEY` |
 | OpenAI | `openai/gpt-4o` | Requires `OPENAI_API_KEY` |
+| OpenCode Zen | `opencode/glm-4.7` | opencode's own pay-per-token catalog. Requires `OPENCODE_API_KEY` |
+| OpenCode Go | `opencode-go/deepseek-v4-flash` | opencode's Go subscription. Requires `OPENCODE_API_KEY`; see the pricing caveat below |
 | NaN | `nan/glm5.3-flash` | Requires `NAN_API_KEY` (or `HELMCODE_API_NAN`) |
 | Helmcode | `helmcode/deepseek-v4-flash` | Requires `HELMCODE_API_KEY` |
+
+### OpenCode Zen and Go
+
+`OPENCODE_API_KEY` covers opencode's own hosted models, which models.dev splits into two providers:
+
+| Route | `MODEL_OVERRIDE` | Billing |
+|-------|------------------|---------|
+| Zen | `opencode/<model>` | Per-token, billed by opencode |
+| Go (subscription) | `opencode-go/<model>` | Flat monthly plan |
+
+An `opencode/...` or `opencode-go/...` model requires `OPENCODE_API_KEY`: it never falls back to `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`, and the credential check passes on the key alone (no `~/.local/share/opencode/auth.json`). Sessions price from the matching models.dev section — Zen rows are seeded bare, Go rows as `opencode-go/<model>` — so a Go run records `costSource: "pricing-table"` at the Go section's per-token rates. Because Go is a flat monthly plan, those rates are a reference attribution, not the invoice.
 
 ### Reasoning / Effort
 

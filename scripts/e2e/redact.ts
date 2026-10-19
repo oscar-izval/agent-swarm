@@ -36,6 +36,8 @@ const CREDENTIAL_ENV_KEYS = [
   "AMP_API_KEY",
   "CURSOR_API_KEY",
   "XAI_API_KEY",
+  // OpenCode Zen / Go first-party key.
+  "OPENCODE_API_KEY",
   // OpenAI-compatible registry provider keys, canonical and alias.
   ...openAICompatibleKeyVars(),
   "CODEX_OAUTH",

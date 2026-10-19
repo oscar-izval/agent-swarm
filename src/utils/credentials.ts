@@ -20,6 +20,9 @@ export const CREDENTIAL_POOL_VARS = [
   "AMP_API_KEY",
   "CURSOR_API_KEY",
   "XAI_API_KEY",
+  // OpenCode Zen / Go first-party key: serves `opencode/<id>` (Zen, pay-per
+  // token) and `opencode-go/<id>` (the Go subscription) on the opencode harness.
+  "OPENCODE_API_KEY",
   // The canonical key var of every OpenAI-compatible registry provider
   // (`@desplega/model-catalog`). Aliases are normalized into these by the
   // runner (`normalizeProviderKeyAliases`), so they never pool.
@@ -61,7 +64,11 @@ export const PROVIDER_CREDENTIAL_VARS: Record<string, readonly string[]> = {
   amp: ["AMP_API_KEY"],
   cursor: ["CURSOR_API_KEY"],
   grok: ["XAI_API_KEY", "OPENROUTER_API_KEY"],
-  opencode: ["OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
+  // OPENCODE_API_KEY last: it serves opencode's own Zen/Go routes, so it must
+  // not shadow the routable keys when a model goes through OpenRouter/Anthropic
+  // or a direct OpenAI-compatible endpoint. `getModelAwareCredentialVars`
+  // promotes it for `opencode/<id>` and `opencode-go/<id>` models.
+  opencode: ["OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENCODE_API_KEY"],
 };
 
 /**
@@ -99,6 +106,15 @@ export function getModelAwareCredentialVars(provider: string, model?: string): r
   // grok routes `openrouter/<id>` to OpenRouter and every other model to xAI.
   if (provider === "grok" && model) {
     return model.startsWith("openrouter/") ? ["OPENROUTER_API_KEY"] : ["XAI_API_KEY"];
+  }
+  // opencode's two first-party Zen routes are selected by their prefix:
+  // `opencode/<id>` (pay-per-token Zen) and `opencode-go/<id>` (the Go
+  // subscription) both take OPENCODE_API_KEY, never the routable keys the
+  // generic slash rule would otherwise keep.
+  if (provider === "opencode" && model) {
+    if (model.startsWith("opencode-go/") || model.startsWith("opencode/")) {
+      return ["OPENCODE_API_KEY"];
+    }
   }
   if (!SLASH_MODEL_PROVIDERS.has(provider) || !model) return base;
   // OpenAI-compatible registry providers own their key: `nan/<id>` and
@@ -139,6 +155,8 @@ export function deriveProviderFromKeyType(keyType: string): string {
       return "cursor";
     case "XAI_API_KEY":
       return "grok";
+    case "OPENCODE_API_KEY":
+      return "opencode";
     case "DEVIN_API_KEY":
       return "devin";
     default:
@@ -354,24 +372,31 @@ export function openAICompatibleKeyLabels(): string[] {
 
 /**
  * Validate that at least one opencode credential is available.
- * Priority: OPENROUTER_API_KEY → ANTHROPIC_API_KEY → OPENAI_API_KEY → each
- * OpenAI-compatible registry provider's key (canonical or alias, e.g.
- * NAN_API_KEY or HELMCODE_API_NAN → `nan_api_key`) →
- * ~/.local/share/opencode/auth.json.
+ * Priority: OPENROUTER_API_KEY → ANTHROPIC_API_KEY → OPENAI_API_KEY →
+ * OPENCODE_API_KEY (opencode's own Zen / Go key) → each OpenAI-compatible
+ * registry provider's key (canonical or alias, e.g. NAN_API_KEY or
+ * HELMCODE_API_NAN → `nan_api_key`) → ~/.local/share/opencode/auth.json.
  * Returns the credential type found, or throws if none are available.
  */
 export function validateOpencodeCredentials(
   env: Record<string, string | undefined>,
-): "openrouter_api_key" | "anthropic_api_key" | "openai_api_key" | Lowercase<string> | "auth_file" {
+):
+  | "openrouter_api_key"
+  | "anthropic_api_key"
+  | "openai_api_key"
+  | "opencode_api_key"
+  | Lowercase<string>
+  | "auth_file" {
   if (env.OPENROUTER_API_KEY) return "openrouter_api_key";
   if (env.ANTHROPIC_API_KEY) return "anthropic_api_key";
   if (env.OPENAI_API_KEY) return "openai_api_key";
+  if (env.OPENCODE_API_KEY) return "opencode_api_key";
   const direct = openAICompatibleProviders().find((p) => providerKeyVars(p).some((n) => env[n]));
   if (direct) return direct.envVar.toLowerCase() as Lowercase<string>;
   const authFile = `${process.env.HOME ?? "/root"}/.local/share/opencode/auth.json`;
   if (existsSync(authFile)) return "auth_file";
   throw new Error(
-    `No opencode credentials found. Set OPENROUTER_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, ${openAICompatibleKeyLabels()
+    `No opencode credentials found. Set OPENROUTER_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENCODE_API_KEY, ${openAICompatibleKeyLabels()
       .map((label) => `${label}, `)
       .join("")}or provide ~/.local/share/opencode/auth.json.`,
   );

@@ -685,12 +685,59 @@ describe("checkOpencodeCredentials", () => {
     }
   });
 
+  test("strict: MODEL_OVERRIDE=opencode-go/... requires OPENCODE_API_KEY", () => {
+    // The Go subscription route: ready on OPENCODE_API_KEY alone with no
+    // auth.json, and an OpenRouter key must NOT satisfy it.
+    const model = "opencode-go/deepseek-v4-flash";
+    const missing = checkOpencodeCredentials(
+      { MODEL_OVERRIDE: model },
+      { homeDir: HOME, fs: noFiles },
+    );
+    expect(missing.ready).toBe(false);
+    expect(missing.missing).toContain("OPENCODE_API_KEY");
+    expect(
+      checkOpencodeCredentials(
+        { MODEL_OVERRIDE: model, OPENROUTER_API_KEY: "x" },
+        { homeDir: HOME, fs: noFiles },
+      ).ready,
+    ).toBe(false);
+    const ready = checkOpencodeCredentials(
+      { MODEL_OVERRIDE: model, OPENCODE_API_KEY: "x" },
+      { homeDir: HOME, fs: noFiles },
+    );
+    expect(ready.ready).toBe(true);
+    expect(ready.satisfiedBy).toBe("env");
+  });
+
+  test("strict: MODEL_OVERRIDE=opencode/... (Zen) requires OPENCODE_API_KEY", () => {
+    const model = "opencode/glm-4.7";
+    expect(
+      checkOpencodeCredentials({ MODEL_OVERRIDE: model }, { homeDir: HOME, fs: noFiles }).ready,
+    ).toBe(false);
+    expect(
+      checkOpencodeCredentials(
+        { MODEL_OVERRIDE: model, OPENCODE_API_KEY: "x" },
+        { homeDir: HOME, fs: noFiles },
+      ).ready,
+    ).toBe(true);
+  });
+
+  test("permissive: OPENCODE_API_KEY alone satisfies opencode with no auth.json", () => {
+    const status = checkOpencodeCredentials(
+      { OPENCODE_API_KEY: "x" },
+      { homeDir: HOME, fs: noFiles },
+    );
+    expect(status.ready).toBe(true);
+    expect(status.satisfiedBy).toBe("env");
+  });
+
   test("not ready when nothing is set", () => {
     const status = checkOpencodeCredentials({}, { homeDir: HOME, fs: noFiles });
     expect(status.ready).toBe(false);
     expect(status.missing).toContain("OPENROUTER_API_KEY");
     expect(status.missing).toContain("ANTHROPIC_API_KEY");
     expect(status.missing).toContain("OPENAI_API_KEY");
+    expect(status.missing).toContain("OPENCODE_API_KEY");
     expect(status.missing).toContain(AUTH);
   });
 });
