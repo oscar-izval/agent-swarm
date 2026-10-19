@@ -1213,6 +1213,40 @@ describe("buildCredStatusReport", () => {
     }
   });
 
+  test("opencode: a Zen / Go model probes OPENCODE_API_KEY, not the routable keys", async () => {
+    const realFetch = globalThis.fetch;
+    const fetchMock = mock(async () => {
+      throw new Error("the pinned Zen/Go key is a presence check, not a live probe");
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+    try {
+      for (const model of ["opencode-go/deepseek-v4-pro", "opencode/deepseek-v4-pro"]) {
+        const snap = await buildCredStatusReport(
+          "opencode",
+          { MODEL_OVERRIDE: model, OPENROUTER_API_KEY: "or-key", OPENCODE_API_KEY: "z-key" },
+          { homeDir: HOME, fs: noFiles },
+          "boot",
+        );
+        expect(snap.ready).toBe(true);
+        expect(snap.liveTest).toMatchObject({ ok: true, error: null, latency_ms: 0 });
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  test("opencode: a Zen / Go model without OPENCODE_API_KEY is not ready", async () => {
+    const snap = await buildCredStatusReport(
+      "opencode",
+      { MODEL_OVERRIDE: "opencode-go/deepseek-v4-pro", OPENROUTER_API_KEY: "or-key" },
+      { homeDir: HOME, fs: noFiles },
+      "boot",
+    );
+    expect(snap.ready).toBe(false);
+    expect(snap.liveTest).toBeNull();
+  });
+
   test("not ready → no live test, snapshot mirrors presence check", async () => {
     const snap = await buildCredStatusReport("claude", {}, {}, "boot");
     expect(snap.ready).toBe(false);

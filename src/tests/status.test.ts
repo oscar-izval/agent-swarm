@@ -93,6 +93,11 @@ const ENV_KEYS_TO_RESET = [
   "OPENAI_API_KEY",
   "EMBEDDING_API_KEY",
   "OPENROUTER_API_KEY",
+  // The probe order and key selection are model-aware; a leaked worker
+  // MODEL_OVERRIDE (e.g. `opencode-go/<id>`) would otherwise change which key
+  // `validateProviderCredentials("opencode")` probes.
+  "MODEL_OVERRIDE",
+  "OPENCODE_API_KEY",
   "CODEX_OAUTH",
   "DEVIN_API_KEY",
   "DEVIN_ORG_ID",

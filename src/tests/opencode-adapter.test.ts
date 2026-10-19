@@ -993,6 +993,18 @@ describe("provider key splice (one picked key per task)", () => {
     expect(openrouter.options.headers).toMatchObject({ "X-Title": "Agent Swarm" });
   });
 
+  test("opencode-go / opencode: env [] and the pool's first member for a Zen/Go model", () => {
+    for (const model of ["opencode-go/deepseek-v4-pro", "opencode/deepseek-v4-pro"]) {
+      const config: Record<string, any> = {};
+      const picked = applyProviderKeySplice(config, model, {
+        OPENCODE_API_KEY: `${PICKED},sk-other-0000000000`,
+      });
+      expect(picked).toEqual({ key: PICKED, name: "OPENCODE_API_KEY" });
+      const id = model.slice(0, model.indexOf("/"));
+      expect(config.provider[id]).toEqual({ env: [], options: { apiKey: PICKED } });
+    }
+  });
+
   test("no splice without a key, or for providers outside the splice", () => {
     for (const model of ["nan/qwen3.6", "helmcode/glm5.3", "openrouter/x/y"]) {
       const config = {};

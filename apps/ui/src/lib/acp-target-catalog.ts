@@ -24,6 +24,8 @@ export const ACP_TARGET_CATALOG: readonly AcpTargetCatalogEntry[] = [
       "OPENAI_API_KEY",
       "OPENROUTER_API_KEY",
       "OPENROUTER_BASE_URL",
+      // OpenCode's own Zen / Go subscription key.
+      "OPENCODE_API_KEY",
       // OpenAI-compatible registry providers: keys (canonical and alias),
       // then their `<ID>_BASE_URL` overrides.
       ...openAICompatibleKeyVars(),

@@ -109,10 +109,11 @@ elif [ "$HARNESS_PROVIDER" = "cursor" ]; then
     fi
 elif [ "$HARNESS_PROVIDER" = "opencode" ]; then
     # opencode auth: OPENROUTER_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY,
-    # NAN_API_KEY (or its HELMCODE_API_NAN alias), HELMCODE_API_KEY, or auth.json must exist
+    # OPENCODE_API_KEY (Zen / Go), NAN_API_KEY (or its HELMCODE_API_NAN alias),
+    # HELMCODE_API_KEY, or auth.json must exist
     OPENCODE_AUTH_FILE="${HOME}/.local/share/opencode/auth.json"
-    if [ -z "$OPENROUTER_API_KEY" ] && [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "${NAN_API_KEY:-}" ] && [ -z "${HELMCODE_API_NAN:-}" ] && [ -z "${HELMCODE_API_KEY:-}" ] && [ ! -f "$OPENCODE_AUTH_FILE" ]; then
-        echo "Warning: opencode provider has no credentials yet (OPENROUTER_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY / NAN_API_KEY / HELMCODE_API_NAN / HELMCODE_API_KEY / ${OPENCODE_AUTH_FILE}). Worker will park in credential-wait until creds appear in swarm_config."
+    if [ -z "$OPENROUTER_API_KEY" ] && [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$OPENCODE_API_KEY" ] && [ -z "${NAN_API_KEY:-}" ] && [ -z "${HELMCODE_API_NAN:-}" ] && [ -z "${HELMCODE_API_KEY:-}" ] && [ ! -f "$OPENCODE_AUTH_FILE" ]; then
+        echo "Warning: opencode provider has no credentials yet (OPENROUTER_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENCODE_API_KEY / NAN_API_KEY / HELMCODE_API_NAN / HELMCODE_API_KEY / ${OPENCODE_AUTH_FILE}). Worker will park in credential-wait until creds appear in swarm_config."
     fi
 elif [ "$HARNESS_PROVIDER" = "claude-managed" ]; then
     # Claude Managed Agents — sessions run in Anthropic's cloud sandbox.

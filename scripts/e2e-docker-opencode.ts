@@ -13,8 +13,9 @@
  *   bun scripts/e2e-docker-opencode.ts --skip-build
  *   E2E_PORT=13098 bun scripts/e2e-docker-opencode.ts
  *
- * Required env:
- *   OPENROUTER_API_KEY  — passed to the opencode worker container
+ * Required env (one of):
+ *   OPENROUTER_API_KEY / ANTHROPIC_API_KEY / OPENCODE_API_KEY — passed to the
+ *   opencode worker container
  */
 import { $, type Subprocess } from "bun";
 
@@ -50,8 +51,14 @@ for (const t of TESTS_TO_RUN) {
   }
 }
 
-if (!process.env.OPENROUTER_API_KEY && !process.env.ANTHROPIC_API_KEY) {
-  console.error("OPENROUTER_API_KEY or ANTHROPIC_API_KEY is required for opencode provider");
+if (
+  !process.env.OPENROUTER_API_KEY &&
+  !process.env.ANTHROPIC_API_KEY &&
+  !process.env.OPENCODE_API_KEY
+) {
+  console.error(
+    "OPENROUTER_API_KEY, ANTHROPIC_API_KEY, or OPENCODE_API_KEY is required for opencode provider",
+  );
   process.exit(1);
 }
 
@@ -159,8 +166,10 @@ async function startOpencodeWorker(
 
   const orKey = process.env.OPENROUTER_API_KEY;
   const antKey = process.env.ANTHROPIC_API_KEY;
+  const opencodeKey = process.env.OPENCODE_API_KEY;
   if (orKey) envFlags.push("-e", `OPENROUTER_API_KEY=${orKey}`);
   if (antKey) envFlags.push("-e", `ANTHROPIC_API_KEY=${antKey}`);
+  if (opencodeKey) envFlags.push("-e", `OPENCODE_API_KEY=${opencodeKey}`);
 
   const modelOverride = process.env.MODEL_OVERRIDE;
   if (modelOverride) envFlags.push("-e", `MODEL_OVERRIDE=${modelOverride}`);

@@ -45,7 +45,7 @@ import type {
   ProviderName,
   ReasoningEffort,
 } from "../types";
-import { CLAUDE_CREDENTIALS_HINT } from "../utils/credentials";
+import { CLAUDE_CREDENTIALS_HINT, getModelAwareCredentialVars } from "../utils/credentials";
 import {
   getOpenRouterAttributionHeaders,
   getOpenRouterBaseUrl,
@@ -495,6 +495,23 @@ export async function validateProviderCredentials(
         // The adapters prefer their auth.json over env keys. Reuse that
         // decision, including any injected filesystem probe used by reports.
         if (status.ready && status.satisfiedBy === "file") return presenceCheckOk();
+        // A model pinned to OPENCODE_API_KEY (`opencode/<id>` or
+        // `opencode-go/<id>`) must not be probed against OpenRouter/Anthropic/
+        // OpenAI just because those keys also sit in env. OpenCode Zen / Go has
+        // no stable `/models` endpoint to probe, so the pinned key is a
+        // presence check (the harness validates it at inference).
+        if (provider === "opencode") {
+          const modelVars = getModelAwareCredentialVars("opencode", env.MODEL_OVERRIDE);
+          if (modelVars.length === 1 && modelVars[0] === "OPENCODE_API_KEY") {
+            return env.OPENCODE_API_KEY
+              ? presenceCheckOk()
+              : {
+                  ok: false,
+                  error: `No usable credential found (OPENCODE_API_KEY is required for MODEL_OVERRIDE=${env.MODEL_OVERRIDE}).`,
+                  latency_ms: Date.now() - startedAt,
+                };
+          }
+        }
         // Preserve the live-probe order for supported env keys:
         // OPENROUTER → ANTHROPIC → OPENAI, then the OpenAI-compatible
         // registry providers in declaration order (NaN, canonical key or

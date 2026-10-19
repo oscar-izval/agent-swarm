@@ -47,7 +47,12 @@ const PROVIDER_CREDENTIAL_KEYS = {
     fallbackKeys: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
   },
   opencode: {
-    keys: ["OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", ...OPENAI_COMPATIBLE_KEYS],
+    keys: [
+      "OPENROUTER_API_KEY",
+      "OPENROUTER_BASE_URL",
+      "OPENCODE_API_KEY",
+      ...OPENAI_COMPATIBLE_KEYS,
+    ],
     fallbackKeys: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
   },
   dsh: {
@@ -198,8 +203,11 @@ function requireCredential(provider: string): void {
     );
   } else if (provider === "opencode") {
     expect(
-      process.env.OPENROUTER_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY,
-      "Opencode requires OPENROUTER_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY",
+      process.env.OPENROUTER_API_KEY ||
+        process.env.ANTHROPIC_API_KEY ||
+        process.env.OPENAI_API_KEY ||
+        process.env.OPENCODE_API_KEY,
+      "Opencode requires OPENROUTER_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENCODE_API_KEY",
     );
   }
 }

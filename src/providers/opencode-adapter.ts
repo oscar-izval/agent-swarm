@@ -316,11 +316,13 @@ export function buildOpenAICompatibleProviderBlock(
 
 /**
  * Built-in OpenCode providers whose key OpenCode reads from `process.env`:
- * `openrouter` plus every registry provider models.dev lists
- * (`catalog: "models.dev"`, e.g. `nan`), which OpenCode ships built in.
+ * `openrouter`, OpenCode's own Zen / Go endpoints (`opencode`, `opencode-go`),
+ * plus every registry provider models.dev lists (`catalog: "models.dev"`, e.g.
+ * `nan`), which OpenCode ships built in.
  */
 function envBoundKeyVars(providerId: string): readonly string[] | undefined {
   if (providerId === "openrouter") return ["OPENROUTER_API_KEY"];
+  if (providerId === "opencode" || providerId === "opencode-go") return ["OPENCODE_API_KEY"];
   const direct = openAICompatibleProvider(providerId);
   return direct?.catalog === "models.dev" ? providerKeyVars(direct) : undefined;
 }
@@ -356,7 +358,8 @@ function pickProviderKey(
  * `process.env`, and that value beats `options.apiKey`. The entrypoint exports
  * a credential pool there as a raw comma list, and a key saved from the
  * dashboard after boot never reaches `process.env` at all, so both 401 without
- * this splice. For `openrouter` and the built-in registry providers (`nan`,
+ * this splice. For `openrouter`, OpenCode's own Zen / Go endpoints
+ * (`opencode`, `opencode-go`), and the built-in registry providers (`nan`,
  * `vercel`) it sets `env: []` plus `options.apiKey` (and `options.baseURL`
  * when `<ID>_BASE_URL` is set; a `baseUrlLocked` provider gets none); for registry providers OpenCode does not ship
  * (`helmcode`) it writes the full custom provider block at
