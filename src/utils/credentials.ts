@@ -54,7 +54,7 @@ export function normalizeProviderKeyAliases(env: Record<string, string | undefin
  */
 export const PROVIDER_CREDENTIAL_VARS: Record<string, readonly string[]> = {
   claude: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
-  pi: ["OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
+  pi: ["OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENCODE_API_KEY"],
   codex: ["OPENAI_API_KEY", "CODEX_OAUTH"],
   devin: ["DEVIN_API_KEY"],
   dsh: ["OPENROUTER_API_KEY", "DEEPSEEK_API_KEY"],
@@ -78,6 +78,20 @@ export const PROVIDER_CREDENTIAL_VARS: Record<string, readonly string[]> = {
 const SLASH_MODEL_PROVIDERS = new Set(["opencode", "pi"]);
 
 /**
+ * Model prefixes that select one of OpenCode's own hosted routes: Zen
+ * (`opencode/<id>`, pay-per-token) and the Go subscription
+ * (`opencode-go/<id>`). Both are authenticated with `OPENCODE_API_KEY` and
+ * with nothing else — see `src/providers/pi-mono-adapter.ts` (the pi gate)
+ * and `src/providers/opencode-adapter.ts` (the opencode gate).
+ */
+const OPENCODE_MODEL_ROUTES = ["opencode/", "opencode-go/"] as const;
+
+/** True when `model` names one of OpenCode's own hosted routes. */
+export function isOpenCodeModelRoute(model: string): boolean {
+  return OPENCODE_MODEL_ROUTES.some((route) => model.startsWith(route));
+}
+
+/**
  * Given a provider and model string, return the credential vars that are
  * actually relevant. This implements the harness × model matrix constraint:
  *
@@ -92,6 +106,14 @@ const SLASH_MODEL_PROVIDERS = new Set(["opencode", "pi"]);
 export function getModelAwareCredentialVars(provider: string, model?: string): readonly string[] {
   const base = PROVIDER_CREDENTIAL_VARS[provider];
   if (!base) return CREDENTIAL_POOL_VARS;
+  // OpenCode's own hosted routes — Zen (`opencode/<id>`, pay-per-token) and
+  // the Go subscription (`opencode-go/<id>`) — are served by OpenCode's API
+  // with `OPENCODE_API_KEY`. On the pi harness they own the model outright,
+  // so a routable key (OpenRouter / Anthropic / OpenAI) must never be picked
+  // for them: the pool would hand the task a key the endpoint rejects.
+  if (provider === "pi" && model && isOpenCodeModelRoute(model)) {
+    return ["OPENCODE_API_KEY"];
+  }
   // dsh has exact prefix routing; the generic slash rule only filters OpenAI keys.
   if (provider === "dsh" && model) {
     return model.startsWith("openrouter/") ? ["OPENROUTER_API_KEY"] : ["DEEPSEEK_API_KEY"];

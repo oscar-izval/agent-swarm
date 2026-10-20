@@ -578,6 +578,21 @@ describe("createPiRuntimeAuth", () => {
       auth: { apiKey: "example-gemini-runtime" },
     });
   });
+
+  test("passes OPENCODE_API_KEY to pi's OpenCode runtime auth", async () => {
+    // pi-ai authenticates both OpenCode routes (`opencode`, `opencode-go`)
+    // with the same key, so the runtime override must reach both provider ids.
+    const modelRuntime = await createPiRuntimeAuth({
+      OPENCODE_API_KEY: "example-opencode-runtime",
+    });
+
+    await expect(modelRuntime.getAuth("opencode-go")).resolves.toMatchObject({
+      auth: { apiKey: "example-opencode-runtime" },
+    });
+    await expect(modelRuntime.getAuth("opencode")).resolves.toMatchObject({
+      auth: { apiKey: "example-opencode-runtime" },
+    });
+  });
 });
 
 // ─── NaN / Helmcode custom providers (models.json, runtime keys, resolve) ───
@@ -942,6 +957,55 @@ describe("checkPiMonoCredentials — NaN and Helmcode", () => {
   test("permissive case accepts a NaN-only or Helmcode-only worker", async () => {
     expect((await checkPiMonoCredentials({ HELMCODE_API_NAN: "x" }, opts)).ready).toBe(true);
     expect((await checkPiMonoCredentials({ HELMCODE_API_KEY: "x" }, opts)).ready).toBe(true);
+  });
+});
+
+describe("checkPiMonoCredentials — OpenCode Zen / Go", () => {
+  const opts = { homeDir: "/home/worker", fs: { existsSync: () => false } };
+
+  test("MODEL_OVERRIDE=opencode-go/* accepts OPENCODE_API_KEY", async () => {
+    const env = { MODEL_OVERRIDE: "opencode-go/deepseek-v4.1-flash" };
+    const missing = await checkPiMonoCredentials(env, opts);
+    expect(missing.ready).toBe(false);
+    expect(missing.missing).toContain("OPENCODE_API_KEY");
+    const ready = await checkPiMonoCredentials({ ...env, OPENCODE_API_KEY: "x" }, opts);
+    expect(ready.ready).toBe(true);
+    expect(ready.satisfiedBy).toBe("env");
+  });
+
+  test("MODEL_OVERRIDE=opencode/* (Zen) accepts OPENCODE_API_KEY", async () => {
+    const env = { MODEL_OVERRIDE: "opencode/glm-4.7" };
+    expect((await checkPiMonoCredentials(env, opts)).ready).toBe(false);
+    expect((await checkPiMonoCredentials({ ...env, OPENCODE_API_KEY: "x" }, opts)).ready).toBe(
+      true,
+    );
+  });
+
+  test("a routable key does not satisfy an opencode-go model", async () => {
+    const env = { MODEL_OVERRIDE: "opencode-go/deepseek-v4.1-flash" };
+    expect((await checkPiMonoCredentials({ ...env, OPENROUTER_API_KEY: "x" }, opts)).ready).toBe(
+      false,
+    );
+    expect((await checkPiMonoCredentials({ ...env, ANTHROPIC_API_KEY: "x" }, opts)).ready).toBe(
+      false,
+    );
+  });
+
+  test("the permissive case accepts an OpenCode-key-only worker", async () => {
+    const status = await checkPiMonoCredentials({ OPENCODE_API_KEY: "x" }, opts);
+    expect(status.ready).toBe(true);
+    expect(status.satisfiedBy).toBe("env");
+    expect((await checkPiMonoCredentials({}, opts)).missing).toContain("OPENCODE_API_KEY");
+  });
+
+  test("an existing auth.json still short-circuits the gate", async () => {
+    const withAuthFile = {
+      homeDir: "/home/worker",
+      fs: { existsSync: () => true },
+    };
+    const status = await checkPiMonoCredentials({ MODEL_OVERRIDE: "opencode-go/x" }, withAuthFile);
+    expect(status.ready).toBe(true);
+    expect(status.satisfiedBy).toBe("file");
   });
 });
 

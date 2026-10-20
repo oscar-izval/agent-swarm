@@ -9,7 +9,7 @@ Operational rules for editing or adding harness providers (claude, codex, openco
 | Claude Code | `claude` | `ClaudeAdapter` | CLI by default; optional Agent SDK transport |
 | Codex | `codex` | `CodexAdapter` | Starts a fresh `codex app-server` for each task. OpenAI/ChatGPT OAuth |
 | opencode | `opencode` | `OpencodeAdapter` | Spawns `opencode` CLI; OpenRouter primary, plus NaN (`nan/*`) and Helmcode (`helmcode/*`); agent-swarm plugin auto-injected. See [harness-configuration § Opencode](/docs/guides/harness-configuration#opencode) and [NaN and Helmcode](#nan-and-helmcode-pi-opencode) below |
-| pi-mono | `pi` | `PiMonoAdapter` | In-process library; OpenRouter, Anthropic, NaN (`nan/*`), Helmcode (`helmcode/*`), or Amazon Bedrock (via `MODEL_OVERRIDE=amazon-bedrock/*` — see Bedrock auth below) |
+| pi-mono | `pi` | `PiMonoAdapter` | In-process library; OpenRouter, Anthropic, NaN (`nan/*`), Helmcode (`helmcode/*`), OpenCode's own Zen / Go routes (`opencode/*`, `opencode-go/*` with `OPENCODE_API_KEY`), or Amazon Bedrock (via `MODEL_OVERRIDE=amazon-bedrock/*` — see Bedrock auth below) |
 | Devin | `devin` | `DevinAdapter` | Cloud-managed via Cognition `/sessions` API |
 | Claude Managed | `claude-managed` | `ClaudeManagedAdapter` | Anthropic managed sandbox; SSE relay |
 | ACP | `acp` | `ACPAdapter` | Curated `opencode`, `gemini`, `copilot`, `qwen`, `kiro` and `goose` presets or a custom [Agent Client Protocol](https://agentclientprotocol.com) command. Session knobs such as model use `session/set_config_option` when advertised, with target-specific startup fallbacks. No swarm-side *model-provider* credential — the target owns its own model auth. The target receives a session-scoped `aseph_` token as the swarm MCP bearer, granting that agent's swarm MCP access for up to 24 hours, so point custom targets only at binaries you trust |
@@ -17,6 +17,38 @@ Operational rules for editing or adding harness providers (claude, codex, openco
 | Amp | `amp` | `AmpAdapter` | Spawns `amp -x --stream-json --stream-json-input` per task; `AMP_API_KEY`; every thread is stored on ampcode.com. See [Amp](#amp-amp) below |
 | Cursor | `cursor` | `CursorAdapter` | In-process `@cursor/sdk` local runtime; inference on Cursor's hosted models with `CURSOR_API_KEY`. See [Cursor](#cursor-cursor) below |
 | Grok | `grok` | `GrokAdapter` | xAI Grok CLI as an ACP server (`grok agent --no-leader stdio`) on the shared ACP client; `XAI_API_KEY`, or `OPENROUTER_API_KEY` for `openrouter/<id>` models. See [Grok](#grok-grok) below |
+
+## OpenCode Zen / Go on pi (`pi`)
+
+pi-ai ships OpenCode's own hosted models as two builtin providers, `opencode`
+(Zen, pay-per-token) and `opencode-go` (the Go subscription). Both
+authenticate with the same key, `OPENCODE_API_KEY`:
+
+```
+HARNESS_PROVIDER=pi
+OPENCODE_API_KEY=<key>
+MODEL_OVERRIDE=opencode-go/deepseek-v4.1-flash   # Go subscription
+# or MODEL_OVERRIDE=opencode/glm-4.7             # Zen, pay-per-token
+```
+
+- **Gate**: `checkPiMonoCredentials` accepts `OPENCODE_API_KEY` for an
+  `opencode/*` or `opencode-go/*` `MODEL_OVERRIDE`, and (with no
+  `MODEL_OVERRIDE`) as one of the any-of keys. A pod with only
+  `OPENCODE_API_KEY` used to park in `waiting_for_credentials` forever: the
+  model prefix was unknown to `modelToCredKeys`, so the gate only accepted
+  ANTHROPIC / OPENROUTER / OPENAI keys or an existing
+  `~/.pi/agent/auth.json`.
+- **Key routing**: `getModelAwareCredentialVars("pi", model)` returns
+  `OPENCODE_API_KEY` alone for those two prefixes — a routable key
+  (OpenRouter / Anthropic / OpenAI) is rejected by the OpenCode endpoint. For
+  every other pi model the OpenCode key stays last in the candidate list.
+- **Runtime auth**: the adapter hands the key to pi's `ModelRuntime` for both
+  `opencode` and `opencode-go`, so a pooled (comma-separated) key is rotated
+  per task instead of being read as a raw pool string from `process.env`.
+- **auth.json**: `pi auth login` (`~/.pi/agent/auth.json`) still satisfies every
+  pi model, including Zen / Go — that short-circuit is unchanged.
+- **Scope**: this covers the *credential* path only. Pricing rows for the Zen /
+  Go sections are seeded by the opencode-harness change, not by this one.
 
 ## NaN and Helmcode (pi, opencode)
 

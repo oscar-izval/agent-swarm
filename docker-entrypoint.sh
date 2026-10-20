@@ -74,8 +74,88 @@ wait_for_api_ready() {
 
 wait_for_api_ready "$MCP_URL"
 
+# BEGIN fetch_with_retry (extracted verbatim by src/tests/entrypoint-boot-fetch-retry.test.ts — keep markers stable)
+# ---- Fetch a control-plane artifact, with bounded retries ----
+#
+# A single-shot `curl -s -f ... > file` leaves a 0-byte file behind when the
+# request fails: the shell opens the redirect target before curl runs, and
+# `curl -f` then exits non-zero without writing a body. The caller sees the
+# failed exit, skips its whole block, and the pod comes up "ready" with an
+# empty artifact — the red-teamer boot at 10:34Z hit exactly that, with all
+# three boot artifacts (swarm config, repo list, setup script) left at 0 bytes
+# while /health already passed.
+#
+# This helper retries with exponential backoff and treats an EMPTY artifact as
+# a failure (a 200 with no body is not a usable config). The budget is bounded
+# twice — by WORKER_BOOT_FETCH_ATTEMPTS and by a wall-clock deadline — so a
+# dead API can never hang the boot.
+#
+# Usage: fetch_with_retry <url> <out_file> <allow_status> -- [curl args...]
+#   <allow_status>  HTTP status that means "there is nothing to fetch" (the
+#                   setup-script route 404s until the agent has registered).
+#                   Pass an empty string when no status is acceptable.
+#
+# Returns 0 when the artifact was fetched and is non-empty (or the status was
+# allowed), 1 when the retry budget ran out.
+fetch_with_retry() {
+    local url="$1"
+    local out="$2"
+    local allow="$3"
+    shift 3
+    if [ "${1:-}" = "--" ]; then shift; fi
+
+    local max_attempts="${WORKER_BOOT_FETCH_ATTEMPTS:-5}"
+    local timeout="${WORKER_BOOT_FETCH_TIMEOUT_SECONDS:-120}"
+    local deadline=$(( $(date +%s) + timeout ))
+    # A shared deadline caps the TOTAL wait across every boot fetch, not just
+    # one of them.
+    if [ -n "${BOOT_FETCH_DEADLINE:-}" ] && [ "${BOOT_FETCH_DEADLINE}" -lt "${deadline}" ]; then
+        deadline="${BOOT_FETCH_DEADLINE}"
+    fi
+
+    local attempt=1
+    local delay=1
+    local status=""
+    while true; do
+        rm -f "$out"
+        status=$(curl -s -o "$out" -w '%{http_code}' --connect-timeout 5 --max-time 30 "$@" "$url" 2>/dev/null) || status=""
+        case "$status" in
+            2??)
+                if [ -s "$out" ]; then
+                    return 0
+                fi
+                # A 2xx with an empty body is not a usable artifact.
+                ;;
+            "")
+                status="000"
+                ;;
+        esac
+        if [ -n "$allow" ] && [ "$status" = "$allow" ]; then
+            echo "[entrypoint] ${url} returned ${status} — nothing to fetch"
+            rm -f "$out"
+            return 0
+        fi
+        if [ "$attempt" -ge "$max_attempts" ]; then
+            echo "[entrypoint] FATAL: boot fetch failed after ${attempt} attempt(s) (HTTP ${status}): ${url}"
+            rm -f "$out"
+            return 1
+        fi
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "[entrypoint] FATAL: boot fetch budget exhausted after ${attempt} attempt(s) (HTTP ${status}): ${url}"
+            rm -f "$out"
+            return 1
+        fi
+        echo "[entrypoint] boot fetch failed (attempt ${attempt}/${max_attempts}, HTTP ${status}), retrying in ${delay}s: ${url}"
+        sleep "$delay"
+        attempt=$((attempt + 1))
+        delay=$(( delay * 2 ))
+    done
+}
+# END fetch_with_retry
+
 if [ "$HARNESS_PROVIDER" = "pi" ]; then
-    # Pi-mono auth: ANTHROPIC_API_KEY, OPENROUTER_API_KEY, NAN_API_KEY (or its
+    # Pi-mono auth: ANTHROPIC_API_KEY, OPENROUTER_API_KEY, OPENCODE_API_KEY (OpenCode's own
+    # Zen / Go routes), NAN_API_KEY (or its
     # HELMCODE_API_NAN alias), HELMCODE_API_KEY, or auth.json must exist — UNLESS MODEL_OVERRIDE selects amazon-bedrock, in which case
     # credential resolution is delegated to the AWS SDK at first inference
     # call (env vars, ~/.aws/*, SSO, IMDS, assume-role, etc.). The boot gate
@@ -86,8 +166,8 @@ if [ "$HARNESS_PROVIDER" = "pi" ]; then
             echo "pi provider: MODEL_OVERRIDE=${MODEL_OVERRIDE} — AWS SDK will resolve Bedrock credentials at runtime (env, ~/.aws/*, SSO, IMDS)."
             ;;
         *)
-            if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENROUTER_API_KEY" ] && [ -z "${NAN_API_KEY:-}" ] && [ -z "${HELMCODE_API_NAN:-}" ] && [ -z "${HELMCODE_API_KEY:-}" ] && [ ! -f "$HOME/.pi/agent/auth.json" ]; then
-                echo "Warning: pi provider has no credentials yet (ANTHROPIC_API_KEY / OPENROUTER_API_KEY / NAN_API_KEY / HELMCODE_API_NAN / HELMCODE_API_KEY / ~/.pi/agent/auth.json). Worker will park in credential-wait until creds appear in swarm_config."
+            if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENROUTER_API_KEY" ] && [ -z "${OPENCODE_API_KEY:-}" ] && [ -z "${NAN_API_KEY:-}" ] && [ -z "${HELMCODE_API_NAN:-}" ] && [ -z "${HELMCODE_API_KEY:-}" ] && [ ! -f "$HOME/.pi/agent/auth.json" ]; then
+                echo "Warning: pi provider has no credentials yet (ANTHROPIC_API_KEY / OPENROUTER_API_KEY / OPENCODE_API_KEY / NAN_API_KEY / HELMCODE_API_NAN / HELMCODE_API_KEY / ~/.pi/agent/auth.json). Worker will park in credential-wait until creds appear in swarm_config."
             fi
             ;;
     esac
@@ -536,11 +616,15 @@ swarm_config_withheld_keys() {
 # END swarm_config_env
 
 if [ -n "$AGENT_ID" ]; then
+    # One shared deadline for every boot fetch below, so a slow API can delay
+    # the boot by a bounded amount in total, not once per artifact.
+    BOOT_FETCH_DEADLINE=$(( $(date +%s) + ${WORKER_BOOT_FETCH_TIMEOUT_SECONDS:-120} ))
     echo "Fetching swarm config from API..."
-    if curl -s -f -H "Authorization: Bearer ${API_KEY}" \
-       -H "X-Agent-ID: ${AGENT_ID}" \
-       "${MCP_URL}/api/config/resolved?agentId=${AGENT_ID}&includeSecrets=true" \
-       > /tmp/swarm_config.json 2>/dev/null; then
+    if fetch_with_retry \
+        "${MCP_URL}/api/config/resolved?agentId=${AGENT_ID}&includeSecrets=true" \
+        /tmp/swarm_config.json "" -- \
+        -H "Authorization: Bearer ${API_KEY}" \
+        -H "X-Agent-ID: ${AGENT_ID}"; then
 
         CONFIG_COUNT=$(jq '.configs | length' /tmp/swarm_config.json 2>/dev/null || echo "0")
         if [ "$CONFIG_COUNT" -gt 0 ]; then
@@ -568,7 +652,8 @@ if [ -n "$AGENT_ID" ]; then
         fi
         rm -f /tmp/swarm_config.json
     else
-        echo "Warning: Could not fetch swarm config (API may not be ready)"
+        echo "[entrypoint] FATAL: could not fetch swarm config; exiting."
+        exit 1
     fi
 fi
 # ---- End swarm config fetch ----
@@ -806,10 +891,11 @@ echo ""
 echo "=== Repo Auto-Clone ==="
 if [ -n "$AGENT_ID" ]; then
     echo "Fetching registered repos from API..."
-    if curl -s -f -H "Authorization: Bearer ${API_KEY}" \
-       -H "X-Agent-ID: ${AGENT_ID}" \
-       "${MCP_URL}/api/repos?autoClone=true" \
-       > /tmp/swarm_repos.json 2>/dev/null; then
+    if fetch_with_retry \
+        "${MCP_URL}/api/repos?autoClone=true" \
+        /tmp/swarm_repos.json "" -- \
+        -H "Authorization: Bearer ${API_KEY}" \
+        -H "X-Agent-ID: ${AGENT_ID}"; then
 
         REPO_COUNT=$(jq '.repos | length' /tmp/swarm_repos.json 2>/dev/null || echo "0")
         if [ "$REPO_COUNT" -gt 0 ]; then
@@ -873,7 +959,8 @@ if [ -n "$AGENT_ID" ]; then
         fi
         rm -f /tmp/swarm_repos.json
     else
-        echo "Warning: Could not fetch repos (API may not be ready)"
+        echo "[entrypoint] FATAL: could not fetch the registered repos; exiting."
+        exit 1
     fi
 else
     echo "Skipping repo clone (no AGENT_ID)"
@@ -898,10 +985,13 @@ if [ -n "$AGENT_ID" ]; then
     echo ""
     echo "=== Setup Script Fetch ==="
     echo "Fetching setup scripts from API..."
-    if curl -s -f -H "Authorization: Bearer ${API_KEY}" \
-       -H "X-Agent-ID: ${AGENT_ID}" \
-       "${MCP_URL}/api/agents/${AGENT_ID}/setup-script" \
-       > /tmp/setup_scripts.json 2>/dev/null; then
+    # 404 is allowed: the route answers "Agent not found" until the worker has
+    # registered itself, and there is simply no setup script to run then.
+    if fetch_with_retry \
+        "${MCP_URL}/api/agents/${AGENT_ID}/setup-script" \
+        /tmp/setup_scripts.json "404" -- \
+        -H "Authorization: Bearer ${API_KEY}" \
+        -H "X-Agent-ID: ${AGENT_ID}"; then
 
         GLOBAL_SCRIPT=$(jq -r '.globalSetupScript // empty' /tmp/setup_scripts.json 2>/dev/null)
         AGENT_SCRIPT=$(jq -r '.setupScript // empty' /tmp/setup_scripts.json 2>/dev/null)
@@ -969,7 +1059,8 @@ if [ -n "$AGENT_ID" ]; then
         fi
         rm -f /tmp/setup_scripts.json
     else
-        echo "Warning: Could not fetch setup scripts (API may not be ready)"
+        echo "[entrypoint] FATAL: could not fetch the setup scripts; exiting."
+        exit 1
     fi
     echo "==============================="
 fi
