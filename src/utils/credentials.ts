@@ -87,7 +87,7 @@ const SLASH_MODEL_PROVIDERS = new Set(["opencode", "pi"]);
 const OPENCODE_MODEL_ROUTES = ["opencode/", "opencode-go/"] as const;
 
 /** True when `model` names one of OpenCode's own hosted routes. */
-export function isOpenCodeModelRoute(model: string): boolean {
+function isOpenCodeModelRoute(model: string): boolean {
   return OPENCODE_MODEL_ROUTES.some((route) => model.startsWith(route));
 }
 
