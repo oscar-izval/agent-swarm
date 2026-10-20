@@ -89,8 +89,10 @@ the agent + global setup scripts. All three go through `fetch_with_retry`:
 - **Bounded wait.** The budget is capped twice: by `WORKER_BOOT_FETCH_ATTEMPTS`
   (default 5) and by a wall-clock deadline — `WORKER_BOOT_FETCH_TIMEOUT_SECONDS`
   (default 120) for the boot as a whole, shared by the three fetches through
-  `BOOT_FETCH_DEADLINE`. Per-attempt `--connect-timeout` / `--max-time` bounds
-  the request itself, so a hung API cannot stall the boot.
+  `BOOT_FETCH_DEADLINE`. Both knobs must be positive integers: a bad value is
+  rejected before the first request instead of breaking the deadline
+  arithmetic. Per-attempt `--connect-timeout` / `--max-time` bounds the request
+  itself, so a hung API cannot stall the boot.
 - **404 on the setup script is not an error.** The route answers "Agent not
   found" until the worker has registered itself; there is simply no setup
   script to run then, so the fetch treats 404 as "nothing to fetch" instead of

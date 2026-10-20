@@ -230,6 +230,65 @@ describe("fetch_with_retry: bounded wait", () => {
     expect(result.stdout).toContain("FATAL: boot fetch budget exhausted");
     expect(result.durationMs).toBeLessThan(5000);
   }, 20000);
+
+  test.each([
+    "0",
+    "-1",
+    "abc",
+  ])("rejects a non-positive %s attempt budget before any request", async (raw) => {
+    const prefix = `/${crypto.randomUUID()}`;
+    let hits = 0;
+    server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname !== `${prefix}/artifact`)
+          return new Response("not found", { status: 404 });
+        hits += 1;
+        return new Response("unavailable", { status: 503 });
+      },
+    });
+
+    const outFile = `${process.env.TMPDIR ?? "/tmp"}/boot-fetch-${crypto.randomUUID()}.json`;
+    const result = await runFetchWithRetry(`${server.url.origin}${prefix}/artifact`, outFile, "", {
+      WORKER_BOOT_FETCH_ATTEMPTS: raw,
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).toContain(
+      `WORKER_BOOT_FETCH_ATTEMPTS must be a positive integer, got '${raw}'`,
+    );
+    // Fails fast on the config check — no request is attempted.
+    expect(hits).toBe(0);
+  }, 20000);
+
+  test("rejects a non-positive timeout before any request", async () => {
+    const prefix = `/${crypto.randomUUID()}`;
+    let hits = 0;
+    server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname !== `${prefix}/artifact`)
+          return new Response("not found", { status: 404 });
+        hits += 1;
+        return new Response("unavailable", { status: 503 });
+      },
+    });
+
+    const outFile = `${process.env.TMPDIR ?? "/tmp"}/boot-fetch-${crypto.randomUUID()}.json`;
+    const result = await runFetchWithRetry(`${server.url.origin}${prefix}/artifact`, outFile, "", {
+      WORKER_BOOT_FETCH_TIMEOUT_SECONDS: "abc",
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).toContain(
+      "WORKER_BOOT_FETCH_TIMEOUT_SECONDS must be a positive integer, got 'abc'",
+    );
+    expect(hits).toBe(0);
+  }, 20000);
 });
 
 describe("fetch_with_retry: allowed missing status", () => {

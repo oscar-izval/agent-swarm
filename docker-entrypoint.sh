@@ -106,6 +106,29 @@ fetch_with_retry() {
 
     local max_attempts="${WORKER_BOOT_FETCH_ATTEMPTS:-5}"
     local timeout="${WORKER_BOOT_FETCH_TIMEOUT_SECONDS:-120}"
+    # Both knobs must be positive integers: a bad value would break the
+    # deadline arithmetic and turn the "hard cap" into an unbounded wait.
+    case "$max_attempts" in
+        ''|*[!0-9]*)
+            echo "[entrypoint] FATAL: WORKER_BOOT_FETCH_ATTEMPTS must be a positive integer, got '${max_attempts}'."
+            return 1
+            ;;
+    esac
+    if [ "$max_attempts" -le 0 ]; then
+        echo "[entrypoint] FATAL: WORKER_BOOT_FETCH_ATTEMPTS must be a positive integer, got '${max_attempts}'."
+        return 1
+    fi
+    case "$timeout" in
+        ''|*[!0-9]*)
+            echo "[entrypoint] FATAL: WORKER_BOOT_FETCH_TIMEOUT_SECONDS must be a positive integer, got '${timeout}'."
+            return 1
+            ;;
+    esac
+    if [ "$timeout" -le 0 ]; then
+        echo "[entrypoint] FATAL: WORKER_BOOT_FETCH_TIMEOUT_SECONDS must be a positive integer, got '${timeout}'."
+        return 1
+    fi
+
     local deadline=$(( $(date +%s) + timeout ))
     # A shared deadline caps the TOTAL wait across every boot fetch, not just
     # one of them.
