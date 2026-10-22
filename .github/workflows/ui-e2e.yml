@@ -113,7 +113,10 @@ jobs:
 
   report:
     needs: test
-    if: always()
+    # Skip when the suite never ran (the upstream-only `if:` on `test` skips it on
+    # forks): a report with no blobs would fail its final step and turn the run red.
+    # failure and cancelled still run the report and fail it.
+    if: always() && needs.test.result != 'skipped'
     runs-on: ubuntu-latest
     permissions:
       contents: read
