@@ -65,6 +65,54 @@ on `pi`, `opencode` and the ACP `opencode` target only; `claude` and `codex` rej
   [model-tiers.md](./model-tiers.md)).
 - **`latest:` aliases** do not cover these providers.
 
+## opencode-go on the pi harness
+
+Running `opencode-go/<id>` models on `pi`. Facts reproduce on pi 1.3.0 and the
+deployed worker (2026-10-22).
+
+- **Catalog**: pi 1.3.0's bundled catalog already contains the `opencode-go`
+  provider with pricing, so do not hand-write a `models.json` provider block
+  for opencode-go ids. The 2026-10-19 workaround file is retired. An id the
+  bundled catalog lacks still runs as a custom id (pi warns and sends it
+  unchanged), unless a stale hand-written block shadows it (see lifecycle).
+- **Credential**: pi's gate is satisfied by `~/.pi/agent/auth.json` or
+  `OPENCODE_API_KEY`. The deployed worker (swarm 2.4.3) only accepts
+  `auth.json` on pi, so the global `SETUP_SCRIPT` config writes that file from
+  `OPENCODE_API_KEY` at container start. Fork PR #4 (`fix(worker): accept
+  OPENCODE_API_KEY on pi and retry the boot fetches`, open) makes the env key
+  sufficient and retries the boot fetch that can otherwise leave a pod without
+  the file.
+- **Model lifecycle**: an id can be deprecated upstream without notice and
+  then answer `HTTP 410 {"type":"ModelDeprecated":...}`. This is
+  deterministic, not a quota wall, and every retry repeats it. Check the live
+  list before pinning a model:
+
+  ```
+  curl -s https://opencode.ai/inference/go/v1/models -H "Authorization: Bearer $OPENCODE_API_KEY" | jq -r '.data[].id'
+  ```
+
+  Observed 2026-10-22: `minimax-m3.1-flash-free` returns 410 — the free promo
+  ended. Its paid sibling `minimax-m3.1-flash` is live; the same 410 shows on
+  it only while a stale 2026-10-19 `models.json` block is mounted, because pi
+  nearest-matches the paid id to the free entry and the error names
+  `minimax-m3.1-flash-free`. Verified live with `pi --no-extensions --model
+  opencode-go/<id> -p 'Reply with exactly: OK'`:
+  `deepseek-v4.1-flash`, `deepseek-v4-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`,
+  `kimi-k3`, and `minimax-m3.1-flash` on a clean config.
+- **Retry / one-shot fallback**: the gateway also returns 429/503 bursts
+  (~20s) longer than pi's default budget (3 retries x 2s), so the same
+  `SETUP_SCRIPT` raises the budget in `settings.json` (`retry.maxRetries: 6`,
+  `retry.baseDelayMs: 4000`, `retry.maxAgentDelayMs: 60000`) and installs a
+  one-shot `agent_before_settle` fallback extension. Behavior: it fires at
+  most once per run and never to the model already in use; it walks a fixed
+  preference chain and takes the first id the registry knows; it covers both
+  give-up shapes (retries exhausted and non-retryable errors such as 410); it
+  asks for one more request from where the task stopped, and a later good turn
+  clears the adapter's terminal error.
+- **Diagnostic**: when a fallback fires, the task's `credStatus.latestModel`
+  reports the fallback id while `MODEL_OVERRIDE` still names the dead one.
+  That mismatch is the signal to re-pin the model.
+
 ## Grok (`grok`)
 
 Set `HARNESS_PROVIDER=grok` and `XAI_API_KEY` (or `OPENROUTER_API_KEY` for `openrouter/<id>` models). `grok agent stdio` is a spec ACP
