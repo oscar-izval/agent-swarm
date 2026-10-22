@@ -76,9 +76,12 @@ deployed worker (2026-10-22).
   bundled catalog lacks still runs as a custom id (pi warns and sends it
   unchanged), unless a stale hand-written block shadows it (see lifecycle).
 - **Credential**: pi's gate is satisfied by `~/.pi/agent/auth.json` or
-  `OPENCODE_API_KEY`. The deployed worker (swarm 2.4.3) only accepts
-  `auth.json` on pi, so the global `SETUP_SCRIPT` config writes that file from
-  `OPENCODE_API_KEY` at container start. Fork PR #4 (`fix(worker): accept
+  `OPENCODE_API_KEY`. The deployed worker (swarm 2.4.3) does not accept
+  `OPENCODE_API_KEY` on pi; `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` and
+  `OPENAI_API_KEY` pass the gate (`modelToCredKeys` returns null for
+  `opencode-go/*`) and then fail at request time, which is why `auth.json` is
+  the working path today. The global `SETUP_SCRIPT` config writes that file
+  from `OPENCODE_API_KEY` at container start. Fork PR #4 (`fix(worker): accept
   OPENCODE_API_KEY on pi and retry the boot fetches`, open) makes the env key
   sufficient and retries the boot fetch that can otherwise leave a pod without
   the file.
