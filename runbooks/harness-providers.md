@@ -47,6 +47,10 @@ MODEL_OVERRIDE=opencode-go/deepseek-v4.1-flash   # Go subscription
   per task instead of being read as a raw pool string from `process.env`.
 - **auth.json**: `pi auth login` (`~/.pi/agent/auth.json`) still satisfies every
   pi model, including Zen / Go — that short-circuit is unchanged.
+- **Catalog**: pi 1.4.0 ships both providers in its bundled catalog, with
+  pricing (`opencode` 83 ids, `opencode-go` 29 ids on 2026-10-23). Do not write a
+  `models.json` block for these ids. An id the bundled catalog lacks still runs
+  as a custom id: pi warns and sends it unchanged.
 - **Scope**: this covers the *credential* path only. Pricing rows for the Zen /
   Go sections are seeded by the opencode-harness change, not by this one.
 
