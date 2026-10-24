@@ -115,7 +115,11 @@ function modelToCredKeys(modelStr: string | undefined): string[] | null {
     if (provider === "openrouter") return ["OPENROUTER_API_KEY"];
     if (provider === "openai") return ["OPENAI_API_KEY"];
     if (provider === "google") return ["GOOGLE_API_KEY", "GEMINI_API_KEY"];
-    if (provider === "opencode-go") return ["OPENCODE_API_KEY"];
+    // OpenCode's own hosted routes: Zen (`opencode/<id>`, pay-per-token) and
+    // the Go subscription (`opencode-go/<id>`). Both are pi-ai builtin
+    // providers whose auth is `envApiKeyAuth("OpenCode API key",
+    // ["OPENCODE_API_KEY"])` — the same key for both.
+    if (provider === "opencode" || provider === "opencode-go") return ["OPENCODE_API_KEY"];
     // models.json custom providers (`writeSessionModelsJson`). The
     // runner normalizes key aliases (HELMCODE_API_NAN → NAN_API_KEY), but a
     // worker without that step (or a boot-time check) may only see the alias.
@@ -350,18 +354,26 @@ export async function checkPiMonoCredentials(
   // Permissive case: any one supported key works. A registry provider key
   // (NaN, Helmcode) only serves `<id>/*` models, but it is still a usable pi
   // credential (the task's explicit model is checked above once it is set).
+  // OPENCODE_API_KEY serves OpenCode's own Zen / Go routes, so it counts too.
   if (
     env.ANTHROPIC_API_KEY ||
     env.OPENROUTER_API_KEY ||
     env.OPENAI_API_KEY ||
+    env.OPENCODE_API_KEY ||
     openAICompatibleKeyVars().some((k) => env[k])
   ) {
     return { ready: true, missing: [], satisfiedBy: "env" };
   }
   return {
     ready: false,
-    missing: ["ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", authFile],
-    hint: `Set one of ANTHROPIC_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY (any one suffices; ${openAICompatibleProviders()
+    missing: [
+      "ANTHROPIC_API_KEY",
+      "OPENROUTER_API_KEY",
+      "OPENAI_API_KEY",
+      "OPENCODE_API_KEY",
+      authFile,
+    ],
+    hint: `Set one of ANTHROPIC_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY / OPENCODE_API_KEY (any one suffices; ${openAICompatibleProviders()
       .map((p) => p.envVar)
       .join(" or ")} serve only ${openAICompatibleProviders()
       .map((p) => `${p.id}/*`)
@@ -494,6 +506,11 @@ const PI_RUNTIME_API_KEYS: readonly (readonly [envKey: string, provider: string]
   ["OPENAI_API_KEY", "openai"],
   ["GEMINI_API_KEY", "google"],
   ["GOOGLE_API_KEY", "google"],
+  // OpenCode's own hosted routes (pi-ai builtin providers): Zen
+  // (`opencode/<id>`) and the Go subscription (`opencode-go/<id>`). Both
+  // authenticate with the same `OPENCODE_API_KEY`, so the key is handed to
+  // both provider ids — only the one the model selects ever runs.
+  ["OPENCODE_API_KEY", "opencode"],
   ["OPENCODE_API_KEY", "opencode-go"],
   // models.json custom providers (the registry). A runtime key beats the
   // file's `apiKey: "$NAN_API_KEY"`, which pi would otherwise read from the

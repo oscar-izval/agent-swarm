@@ -71,6 +71,33 @@ After boot, a live provider change triggers a fresh credential report. A not-rea
 
 Ready workers retain the five-minute Bedrock enumeration refresh. `CRED_CHECK_DISABLE=1` disables both boot checks and steady-state refreshes.
 
+## Boot-time control-plane fetches: bounded retries and a loud failure
+
+`docker-entrypoint.sh` fetches three artifacts from the control plane right after
+`/health` passes: the resolved swarm config, the repo list to auto-clone, and
+the agent + global setup scripts. All three go through `fetch_with_retry`:
+
+- **Retries with backoff.** A single-shot `curl -s -f ... > /tmp/<file>` leaves
+  a 0-byte file behind when the request fails (the shell opens the redirect
+  target before curl runs), and the caller then skips its whole block. The pod
+  comes up "ready" with empty artifacts — observed at the red-teamer boot on
+  2026-10-20, where all three artifacts were 0 bytes. The helper retries with
+  exponential backoff and treats an EMPTY body as a failure.
+- **Loud failure.** When the retry budget runs out, the helper logs a `FATAL`
+  line and the entrypoint exits non-zero, so the pod is restarted against a
+  healthy API instead of limping on with empty artifacts.
+- **Bounded wait.** The budget is capped twice: by `WORKER_BOOT_FETCH_ATTEMPTS`
+  (default 5) and by a wall-clock deadline — `WORKER_BOOT_FETCH_TIMEOUT_SECONDS`
+  (default 120) for the boot as a whole, shared by the three fetches through
+  `BOOT_FETCH_DEADLINE`. Both knobs must be positive integers: a bad value is
+  rejected before the first request instead of breaking the deadline
+  arithmetic. Per-attempt `--connect-timeout` / `--max-time` bounds the request
+  itself, so a hung API cannot stall the boot.
+- **404 on the setup script is not an error.** The route answers "Agent not
+  found" until the worker has registered itself; there is simply no setup
+  script to run then, so the fetch treats 404 as "nothing to fetch" instead of
+  retrying it into a failure.
+
 ## 1. The `ProviderAdapter` contract
 
 ### Claude execution transports
@@ -186,7 +213,7 @@ The runner consumes these events (not the provider's native ones) to post progre
 | File | Transport | Auth |
 |---|---|---|
 | [`src/providers/claude-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/claude-adapter.ts) | `Bun.spawn` of `claude` CLI with `--output-format stream-json`, JSONL stdout parsing | `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`, or a gateway / Foundry / Bedrock / Vertex route ([Model Gateways](/docs/guides/provider-auth/model-gateways#claude-code-through-a-gateway-or-cloud-provider)) |
-| [`src/providers/pi-mono-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-adapter.ts) | In-process via `createAgentSession` from `@earendil-works/pi-coding-agent`; no subprocess | `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `~/.pi/agent/auth.json` — or, when `BEDROCK_AUTH_MODE=sdk` or `MODEL_OVERRIDE=amazon-bedrock/*`, AWS SDK default chain (probed via `ListFoundationModels`; see [pi-mono + Amazon Bedrock](#pi-mono-amazon-bedrock-auth) below) |
+| [`src/providers/pi-mono-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-adapter.ts) | In-process via `createAgentSession` from `@earendil-works/pi-coding-agent`; no subprocess | `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `OPENCODE_API_KEY` (OpenCode Zen / Go) / `~/.pi/agent/auth.json` — or, when `BEDROCK_AUTH_MODE=sdk` or `MODEL_OVERRIDE=amazon-bedrock/*`, AWS SDK default chain (probed via `ListFoundationModels`; see [pi-mono + Amazon Bedrock](#pi-mono-amazon-bedrock-auth) below) |
 | [`src/providers/codex-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-adapter.ts) | Parent adapter spawns `src/commands/codex-session-runner.ts`. The child starts one `codex app-server`, then bridges JSON-RPC notifications and requests to normalized events and controls over bidirectional JSONL. | `OPENAI_API_KEY` or ChatGPT OAuth stored in `swarm_config.codex_oauth` (see §6) |
 | [`src/providers/claude-managed-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/claude-managed-adapter.ts) | Anthropic SDK `client.beta.sessions.events.stream` (SSE); session executes in Anthropic's managed cloud sandbox, worker is a thin relay | `ANTHROPIC_API_KEY` plus pre-existing `MANAGED_AGENT_ID` + `MANAGED_ENVIRONMENT_ID` from one-time `claude-managed-setup` CLI (see §13) |
 | [`src/providers/devin-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/devin-adapter.ts) | Cognition Devin v3 REST API; worker polls the remote session | `DEVIN_API_KEY` + `DEVIN_ORG_ID` |

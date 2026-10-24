@@ -4,6 +4,7 @@ import {
   CREDENTIAL_POOL_VARS,
   deriveProviderFromKeyType,
   getModelAwareCredentialVars,
+  PROVIDER_CREDENTIAL_VARS,
   resolveCredentialPools,
   selectRandomCredential,
   validateClaudeCredentials,
@@ -293,6 +294,26 @@ describe("getModelAwareCredentialVars", () => {
     expect(vars).toContain("OPENAI_API_KEY");
   });
 
+  it("routes opencode-go/* and opencode/* to OPENCODE_API_KEY on pi", () => {
+    // The OpenCode endpoints take only their own key: a routable key
+    // (OpenRouter / Anthropic / OpenAI) would be rejected by the endpoint.
+    expect(getModelAwareCredentialVars("pi", "opencode-go/deepseek-v4.1-flash")).toEqual([
+      "OPENCODE_API_KEY",
+    ]);
+    expect(getModelAwareCredentialVars("pi", "opencode/glm-4.7")).toEqual(["OPENCODE_API_KEY"]);
+    // Only the exact prefixes route: a look-alike keeps the normal pi list
+    // (OPENCODE_API_KEY last, as a fallback candidate only).
+    for (const lookalike of ["opencodex/x", "opencode-gos/x"]) {
+      const vars = getModelAwareCredentialVars("pi", lookalike);
+      expect(vars).not.toEqual(["OPENCODE_API_KEY"]);
+      expect(vars.length).toBeGreaterThan(1);
+    }
+  });
+
+  it("lists OPENCODE_API_KEY as a pi credential", () => {
+    expect(PROVIDER_CREDENTIAL_VARS.pi).toContain("OPENCODE_API_KEY");
+  });
+
   it("returns static list for non-slash providers regardless of model", () => {
     const vars = getModelAwareCredentialVars("claude", "google/gemini-3-flash-preview");
     expect(vars).toContain("CLAUDE_CODE_OAUTH_TOKEN");
@@ -330,25 +351,17 @@ describe("getModelAwareCredentialVars", () => {
     }
   });
 
-  it("keeps OpenRouter and bare-id routing byte-identical", () => {
-    for (const provider of ["pi", "opencode"]) {
-      expect(
-        getModelAwareCredentialVars(provider, "openrouter/deepseek/deepseek-v4-flash"),
-      ).toEqual(["OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"]);
-      expect(getModelAwareCredentialVars(provider, "openai/gpt-5")).toEqual([
-        "OPENROUTER_API_KEY",
-        "ANTHROPIC_API_KEY",
-      ]);
-      expect(getModelAwareCredentialVars(provider, "gpt-4o")).toEqual([
-        "OPENROUTER_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY",
-      ]);
+  it("keeps OpenRouter and bare-id routing order, each harness adding only its own key", () => {
+    const cases = [
+      ["openrouter/deepseek/deepseek-v4-flash", ["OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"]],
+      ["openai/gpt-5", ["OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"]],
+      ["gpt-4o", ["OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"]],
       // A NaN model routed through OpenRouter is still an OpenRouter model.
-      expect(getModelAwareCredentialVars(provider, "openrouter/nan/glm5.3")).toEqual([
-        "OPENROUTER_API_KEY",
-        "ANTHROPIC_API_KEY",
-      ]);
+      ["openrouter/nan/glm5.3", ["OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"]],
+    ] as const;
+    for (const [model, expected] of cases) {
+      expect(getModelAwareCredentialVars("pi", model)).toEqual([...expected, "OPENCODE_API_KEY"]);
+      expect(getModelAwareCredentialVars("opencode", model)).toEqual([...expected]);
     }
   });
 

@@ -282,11 +282,12 @@ pi-mono supports several authentication methods depending on which model provide
 | **OpenRouter** | `OPENROUTER_API_KEY` | Access 100+ models via OpenRouter |
 | **OpenAI** | `OPENAI_API_KEY` | Direct OpenAI API access |
 | **Google** | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Direct Google AI API access (only honored when `MODEL_OVERRIDE` starts with `google/`) |
+| **OpenCode Zen / Go** | `OPENCODE_API_KEY` | OpenCode's own hosted models — Zen (`opencode/<id>`, pay-per-token) and the Go subscription (`opencode-go/<id>`). Pinned by those model prefixes |
 | **NaN** | `NAN_API_KEY` (alias `HELMCODE_API_NAN`) | Flat-rate NaN models. See [NaN and Helmcode](#nan-and-helmcode) |
 | **Helmcode** | `HELMCODE_API_KEY` | Flat-rate Helmcode models. See [NaN and Helmcode](#nan-and-helmcode) |
 | **Auth file** | `~/.pi/agent/auth.json` | Pre-configured auth file |
 
-At least one of these must be available. The Docker entrypoint validates this on startup. When `MODEL_OVERRIDE` starts with a provider prefix, only the matching key is required; when it's unset, any one of `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `OPENAI_API_KEY` suffices.
+At least one of these must be available. The Docker entrypoint validates this on startup. When `MODEL_OVERRIDE` starts with a provider prefix, only the matching key is required; when it's unset, any one of `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `OPENAI_API_KEY` / `OPENCODE_API_KEY` suffices.
 
 ### Environment Variables
 
@@ -298,6 +299,7 @@ At least one of these must be available. The Docker entrypoint validates this on
 | `OPENROUTER_BASE_URL` | No | `https://openrouter.ai/api/v1` | Route OpenRouter model and session-summary traffic through an OpenAI-compatible gateway |
 | `OPENAI_API_KEY` | One of* | — | OpenAI API key for GPT models |
 | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | When prefixed | — | Google AI API key — required only when `MODEL_OVERRIDE` uses a `google/` prefix |
+| `OPENCODE_API_KEY` | One of* | — | OpenCode's own Zen / Go key for `opencode/<id>` and `opencode-go/<id>` models. Comma-separated values form a pool |
 | `NAN_API_KEY` | One of* | — | NaN API key for `nan/<id>` models. `HELMCODE_API_NAN` is accepted as an alias; `NAN_API_KEY` wins when both are set. Comma-separated values form a pool |
 | `HELMCODE_API_KEY` | One of* | — | Helmcode API key for `helmcode/<id>` models. Comma-separated values form a pool |
 
@@ -322,9 +324,10 @@ The prefix before the first `/` selects the provider and the matching credential
 | `openrouter/<id>` | `openrouter/moonshotai/kimi-k2.5` ([OpenRouter catalog](https://openrouter.ai/models)) | `OPENROUTER_API_KEY` |
 | `openai/<id>` | `openai/gpt-4o` | `OPENAI_API_KEY` |
 | `google/<id>` | `google/gemini-2.5-pro` | `GOOGLE_API_KEY` or `GEMINI_API_KEY` |
+| `opencode/<id>` | `opencode/glm-4.7` | `OPENCODE_API_KEY` (OpenCode Zen, pay-per-token) |
+| `opencode-go/<id>` | `opencode-go/deepseek-v4.1-flash` | `OPENCODE_API_KEY` (OpenCode Go subscription) |
 | `nan/<id>` | `nan/mimo-v2.6-flash` | `NAN_API_KEY` (or `HELMCODE_API_NAN`) |
 | `helmcode/<id>` | `helmcode/glm5.3-flash` | `HELMCODE_API_KEY` |
-| `opencode-go/<id>` | `opencode-go/deepseek-v4.1-flash` | `OPENCODE_API_KEY` |
 
 models.dev can list `opencode-go` ids that pi-ai does not ship yet, and pi runs its default model for those. The worker reports the ids its pi-ai resolves (`credStatus.opencodeGo`), and the dashboard picker offers only those.
 

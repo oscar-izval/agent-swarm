@@ -129,7 +129,14 @@ export const REQUIRED_CRED_VARS_BY_PROVIDER: Record<SupportedProvider, readonly 
     "OPENAI_API_KEY",
     ...openAICompatibleKeyVars(),
   ],
-  pi: ["ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", ...openAICompatibleKeyVars()],
+  pi: [
+    "ANTHROPIC_API_KEY",
+    "OPENROUTER_API_KEY",
+    "OPENAI_API_KEY",
+    // OpenCode's own Zen / Go routes (`opencode/<id>`, `opencode-go/<id>`).
+    "OPENCODE_API_KEY",
+    ...openAICompatibleKeyVars(),
+  ],
   // The ACP target owns its auth; custom targets still need a command.
   acp: [],
   dsh: ["DEEPSEEK_API_KEY", "OPENROUTER_API_KEY"],
