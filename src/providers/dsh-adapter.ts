@@ -40,20 +40,35 @@ import type {
 export const DSH_PACKAGE = "@deepseek-ai/dsh@0.2.1-rc.3";
 
 export function checkDshCredentials(env: Record<string, string | undefined>): CredStatus {
-  return env.DEEPSEEK_API_KEY?.trim() || env.OPENROUTER_API_KEY?.trim()
+  return env.DEEPSEEK_API_KEY?.trim() ||
+    env.OPENROUTER_API_KEY?.trim() ||
+    env.OPENCODE_API_KEY?.trim()
     ? { ready: true, missing: [], satisfiedBy: "env" }
     : {
         ready: false,
-        missing: ["DEEPSEEK_API_KEY", "OPENROUTER_API_KEY"],
-        hint: "Set DEEPSEEK_API_KEY or OPENROUTER_API_KEY for dsh.",
+        missing: ["DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "OPENCODE_API_KEY"],
+        hint: "Set DEEPSEEK_API_KEY, OPENROUTER_API_KEY or OPENCODE_API_KEY for dsh.",
       };
 }
 
+/**
+ * Model-string prefixes that select a `llm-pi-ai` route. Every other string is
+ * a bare DeepSeek API id on the native `deepseek-official` route. dsh 0.2.1-rc
+ * declares both prefixed routes itself, including OpenCode's session header.
+ */
+const DSH_ROUTES = [
+  { prefix: "openrouter/", route: "openrouter", keyEnv: "OPENROUTER_API_KEY" },
+  { prefix: "opencode-go/", route: "opencode-go", keyEnv: "OPENCODE_API_KEY" },
+] as const;
+
+/** OpenCode Go's OpenAI-compatible endpoint, as declared by dsh's own route. */
+const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1";
+
 /** What the adapter resolved before spawning; dsh's stream never echoes it back. */
 interface DshRun {
-  /** The swarm model string (`openrouter/<id>` or a bare DeepSeek id). */
+  /** The swarm model string (`openrouter/<id>`, `opencode-go/<id>` or a bare DeepSeek id). */
   model: string;
-  /** dsh route the patch selected: `openrouter` or `deepseek-official`. */
+  /** dsh route the patch selected: `openrouter`, `opencode-go` or `deepseek-official`. */
   route: string;
   /** Model id dsh sends on that route. */
   modelId: string;
@@ -62,9 +77,13 @@ interface DshRun {
   agentId: string;
 }
 
-/** Catalog key for the context-window lookup: the direct API's ids live under `deepseek/`. */
+/**
+ * Catalog key for the context-window lookup: a prefixed model string is its own
+ * catalog key (`openrouter/...`, `opencode-go/...`); the direct API's bare ids
+ * live under `deepseek/`.
+ */
 function contextWindowKey(model: string): string {
-  return model.startsWith("openrouter/") ? model : `deepseek/${model}`;
+  return DSH_ROUTES.some((route) => model.startsWith(route.prefix)) ? model : `deepseek/${model}`;
 }
 
 /** MCP server name; dsh exposes its tools as `mcp__agent-swarm__<tool>`. */
@@ -73,11 +92,11 @@ const DSH_MCP_SERVER_NAME = "agent-swarm";
 const DSH_MCP_ENTRY_ID = "swarm-mcp";
 
 /**
- * pi-ai treats a hand-declared OpenRouter model as non-reasoning, so every
- * effort but `off` fails with UNSUPPORTED_REASONING_EFFORT. Declare the levels
- * the catalog lists for the model, each sent to OpenRouter under its own name.
+ * pi-ai treats a hand-declared model as non-reasoning, so every effort but
+ * `off` fails with UNSUPPORTED_REASONING_EFFORT. Declare the levels the catalog
+ * lists for the model, each sent to the route under its own name.
  */
-function openRouterEfforts(model: string): Record<string, string> {
+function declaredModelEfforts(model: string): Record<string, string> {
   return Object.fromEntries(
     reasoningCapability("dsh", model).levels.map((level) => [level, level]),
   );
@@ -319,13 +338,14 @@ export class DshAdapter implements ProviderAdapter {
   async createSession(config: ProviderSessionConfig): Promise<ProviderSession> {
     const env = { ...process.env, ...config.env };
     if (!checkDshCredentials(env).ready) {
-      throw new Error("dsh requires DEEPSEEK_API_KEY or OPENROUTER_API_KEY");
+      throw new Error("dsh requires DEEPSEEK_API_KEY, OPENROUTER_API_KEY or OPENCODE_API_KEY");
     }
     const model = config.model || DEFAULT_MODEL_TIER_MAP.dsh.regular;
-    const openrouter = model.startsWith("openrouter/");
-    const modelId = openrouter ? model.slice("openrouter/".length) : model;
-    const keyEnv = openrouter ? "OPENROUTER_API_KEY" : "DEEPSEEK_API_KEY";
-    if (!modelId.trim()) throw new Error("dsh requires a model ID after openrouter/");
+    const selected = DSH_ROUTES.find((candidate) => model.startsWith(candidate.prefix));
+    const route = selected?.route ?? "deepseek-official";
+    const keyEnv = selected?.keyEnv ?? "DEEPSEEK_API_KEY";
+    const modelId = selected ? model.slice(selected.prefix.length) : model;
+    if (!modelId.trim()) throw new Error("dsh requires a model ID after the route prefix");
     if (!env[keyEnv]?.trim()) throw new Error(`dsh model ${model} requires ${keyEnv}`);
     const binary = env.DSH_BINARY || Bun.which("dsh", { PATH: env.PATH });
     if (!binary) {
@@ -339,15 +359,35 @@ export class DshAdapter implements ProviderAdapter {
       skillsDir: join(env.HOME ?? "/home/worker", ".agents", "skills"),
       onInline: config.onPromptSkill,
     });
-    const route = openrouter ? "openrouter" : "deepseek-official";
     const effort = applyReasoningEffort("dsh", model, config.reasoningEffort);
     const reasoningEffort = effort.kind === "dsh-effort" ? effort.reasoningEffort : null;
     const directory = await mkdtemp(join(tmpdir(), "swarm-dsh-"));
     try {
       const patchPath = join(directory, "patch.json");
-      const openRouterHeaders = openrouter
-        ? getOpenRouterAttributionHeaders(getOpenRouterBaseUrl(env), env)
-        : {};
+      const openRouterHeaders =
+        route === "openrouter"
+          ? getOpenRouterAttributionHeaders(getOpenRouterBaseUrl(env), env)
+          : {};
+      // Declare the selected ID even if the bundled catalog predates it.
+      const declaredModels = [
+        reasoningEffort
+          ? { id: modelId, reasoningEfforts: declaredModelEfforts(model) }
+          : { id: modelId },
+      ];
+      const piAiProviders =
+        route === "deepseek-official"
+          ? null
+          : {
+              [route]: {
+                apiKeyEnv: keyEnv,
+                baseURL: route === "openrouter" ? getOpenRouterBaseUrl(env) : OPENCODE_GO_BASE_URL,
+                ...(Object.keys(openRouterHeaders).length > 0
+                  ? { headers: openRouterHeaders }
+                  : {}),
+                api: "openai-completions",
+                models: declaredModels,
+              },
+            };
       const runtimeInstanceId = swarmRuntimeInstanceId();
       // JSON is valid YAML. Values stay data, including arbitrary system prompts.
       await writeFile(
@@ -362,28 +402,8 @@ export class DshAdapter implements ProviderAdapter {
             },
           },
           { id: "system-prompt", config: { personaPrefix: config.systemPrompt } },
-          openrouter
-            ? {
-                id: "llm-pi-ai",
-                config: {
-                  providers: {
-                    openrouter: {
-                      apiKeyEnv: keyEnv,
-                      baseURL: getOpenRouterBaseUrl(env),
-                      ...(Object.keys(openRouterHeaders).length > 0
-                        ? { headers: openRouterHeaders }
-                        : {}),
-                      api: "openai-completions",
-                      // Declare the selected ID even if the bundled catalog predates it.
-                      models: [
-                        reasoningEffort
-                          ? { id: modelId, reasoningEfforts: openRouterEfforts(model) }
-                          : { id: modelId },
-                      ],
-                    },
-                  },
-                },
-              }
+          piAiProviders
+            ? { id: "llm-pi-ai", config: { providers: piAiProviders } }
             : { id: "llm-deepseek", config: { apiKeyEnv: keyEnv } },
           // The worker container is the sandbox, as for codex
           // (`danger-full-access`). dsh's workspace-write policy only lets

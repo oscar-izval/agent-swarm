@@ -44,16 +44,28 @@ describe("reasoningLevelsFor", () => {
       "high",
       "max",
     ]);
+    // An opencode-go id is bare too, but that route has no real `off`.
+    expect(reasoningLevelsFor("dsh", "deepseek-v4-pro", facts, "opencode-go")).toEqual([
+      "low",
+      "high",
+      "max",
+    ]);
   });
 
-  test("dsh model strings resolve to the openrouter or deepseek catalog section", () => {
+  test("dsh model strings resolve to the openrouter, opencode-go or deepseek catalog section", () => {
     const catalog = {
       openrouter: { models: { "deepseek/deepseek-v4.1-flash": effort("low", "high") } },
+      "opencode-go": { models: { "deepseek-v4.1-flash": effort("low", "high", "max") } },
       deepseek: { models: { "deepseek-v4-pro": effort("high", "max") } },
     };
     expect(
       reasoningLevelsForModel("dsh", "openrouter/deepseek/deepseek-v4.1-flash", catalog),
     ).toEqual(["low", "high"]);
+    expect(reasoningLevelsForModel("dsh", "opencode-go/deepseek-v4.1-flash", catalog)).toEqual([
+      "low",
+      "high",
+      "max",
+    ]);
     expect(reasoningLevelsForModel("dsh", "deepseek-v4-pro", catalog)).toEqual(["high", "max"]);
     expect(reasoningLevelsForModel("dsh", "deepseek-flash", catalog)).toEqual([]);
   });

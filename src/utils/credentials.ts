@@ -57,7 +57,7 @@ export const PROVIDER_CREDENTIAL_VARS: Record<string, readonly string[]> = {
   pi: ["OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
   codex: ["OPENAI_API_KEY", "CODEX_OAUTH"],
   devin: ["DEVIN_API_KEY"],
-  dsh: ["OPENROUTER_API_KEY", "DEEPSEEK_API_KEY"],
+  dsh: ["OPENROUTER_API_KEY", "DEEPSEEK_API_KEY", "OPENCODE_API_KEY"],
   amp: ["AMP_API_KEY"],
   cursor: ["CURSOR_API_KEY"],
   grok: ["XAI_API_KEY", "OPENROUTER_API_KEY"],
@@ -94,7 +94,9 @@ export function getModelAwareCredentialVars(provider: string, model?: string): r
   if (!base) return CREDENTIAL_POOL_VARS;
   // dsh has exact prefix routing; the generic slash rule only filters OpenAI keys.
   if (provider === "dsh" && model) {
-    return model.startsWith("openrouter/") ? ["OPENROUTER_API_KEY"] : ["DEEPSEEK_API_KEY"];
+    if (model.startsWith("openrouter/")) return ["OPENROUTER_API_KEY"];
+    if (model.startsWith("opencode-go/")) return ["OPENCODE_API_KEY"];
+    return ["DEEPSEEK_API_KEY"];
   }
   // grok routes `openrouter/<id>` to OpenRouter and every other model to xAI.
   if (provider === "grok" && model) {

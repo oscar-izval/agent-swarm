@@ -1,6 +1,6 @@
 ---
 title: DeepSeek Harness (dsh)
-description: Configure DeepSeek Harness workers, choose the DeepSeek or OpenRouter route, and avoid the tier-default routing trap
+description: Configure DeepSeek Harness workers, choose the DeepSeek, OpenRouter or OpenCode Go route, and avoid the tier-default routing trap
 ---
 
 `dsh` workers run DeepSeek's `@deepseek-ai/dsh` CLI in headless JSON mode. The
@@ -16,18 +16,32 @@ DEEPSEEK_API_KEY=...
 ```
 
 `DSH_BINARY` optionally selects another trusted `dsh` executable. The worker
-accepts either `DEEPSEEK_API_KEY` or `OPENROUTER_API_KEY` at startup, but the
-selected model decides which key a run needs.
+accepts `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY` or `OPENCODE_API_KEY` at startup.
+The selected model decides which key a run needs.
 
 ## Pick the route
 
 | Model format | Route | Required key |
 |---|---|---|
 | `openrouter/<id>` | OpenRouter | `OPENROUTER_API_KEY` |
+| `opencode-go/<id>` | OpenCode Go | `OPENCODE_API_KEY` |
 | Bare bundled dsh id, such as `deepseek-v4-flash` or `deepseek-v4-pro` | DeepSeek API | `DEEPSEEK_API_KEY` |
 
 The prefix is the route selector. A DeepSeek key does not turn an
 `openrouter/...` model into a direct DeepSeek request.
+
+## Route to OpenCode Go
+
+Set `OPENCODE_API_KEY` and select an `opencode-go/<id>` model:
+
+```bash
+HARNESS_PROVIDER=dsh
+OPENCODE_API_KEY=...
+MODEL_OVERRIDE=opencode-go/deepseek-v4.1-flash
+```
+
+The adapter declares the model on the route, so an id the bundled catalog does
+not list still runs. dsh owns the OpenCode session header. Do not add it by hand.
 
 ## Use the DeepSeek API for tiered tasks
 

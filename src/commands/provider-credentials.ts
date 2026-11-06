@@ -132,7 +132,7 @@ export const REQUIRED_CRED_VARS_BY_PROVIDER: Record<SupportedProvider, readonly 
   pi: ["ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", ...openAICompatibleKeyVars()],
   // The ACP target owns its auth; custom targets still need a command.
   acp: [],
-  dsh: ["DEEPSEEK_API_KEY", "OPENROUTER_API_KEY"],
+  dsh: ["DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "OPENCODE_API_KEY"],
   amp: ["AMP_API_KEY"],
   cursor: ["CURSOR_API_KEY"],
   grok: ["XAI_API_KEY", "OPENROUTER_API_KEY"],
@@ -553,7 +553,7 @@ export async function validateProviderCredentials(
           ? presenceCheckOk()
           : {
               ok: false,
-              error: "Set DEEPSEEK_API_KEY or OPENROUTER_API_KEY for dsh.",
+              error: "Set DEEPSEEK_API_KEY, OPENROUTER_API_KEY or OPENCODE_API_KEY for dsh.",
               latency_ms: Date.now() - startedAt,
             };
       case "amp": {
