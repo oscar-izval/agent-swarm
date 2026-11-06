@@ -76,6 +76,7 @@ else {
       DSH_BINARY: binary,
       DEEPSEEK_API_KEY: "dsh-test-credential-value",
       OPENROUTER_API_KEY: "",
+      OPENCODE_API_KEY: "",
       OPENROUTER_BASE_URL: "",
       DSH_TEST_MODE: mode,
     },
@@ -89,14 +90,25 @@ describe("dsh harness", () => {
     expect(DEFAULT_MODEL_TIER_MAP.dsh).toEqual(DEFAULT_MODEL_TIER_MAP.pi);
     expect(checkDshCredentials({ OPENAI_API_KEY: "unrelated" }).ready).toBe(false);
     expect(checkDshCredentials({ DEEPSEEK_API_KEY: " " }).ready).toBe(false);
-    expect(checkDshCredentials({}).missing).toEqual(["DEEPSEEK_API_KEY", "OPENROUTER_API_KEY"]);
+    expect(checkDshCredentials({ OPENCODE_API_KEY: "present" }).ready).toBe(true);
+    expect(checkDshCredentials({}).missing).toEqual([
+      "DEEPSEEK_API_KEY",
+      "OPENROUTER_API_KEY",
+      "OPENCODE_API_KEY",
+    ]);
     expect((await checkProviderCredentials("dsh", { OPENROUTER_API_KEY: "present" })).ready).toBe(
+      true,
+    );
+    expect((await checkProviderCredentials("dsh", { OPENCODE_API_KEY: "present" })).ready).toBe(
       true,
     );
     expect(getModelAwareCredentialVars("dsh", DEFAULT_MODEL_TIER_MAP.dsh.ultra)).toEqual([
       "OPENROUTER_API_KEY",
     ]);
     expect(getModelAwareCredentialVars("dsh", "deepseek-v4-pro")).toEqual(["DEEPSEEK_API_KEY"]);
+    expect(getModelAwareCredentialVars("dsh", "opencode-go/deepseek-v4.1-flash")).toEqual([
+      "OPENCODE_API_KEY",
+    ]);
     expect((await checkProviderCredentials("dsh", { DEEPSEEK_API_KEY: "present" })).ready).toBe(
       true,
     );
@@ -179,6 +191,73 @@ describe("dsh harness", () => {
       expect(JSON.stringify(patch)).not.toContain("openrouter-test-key");
     });
   }
+
+  test("routes opencode-go models through llm-pi-ai with only its key", async () => {
+    const config = await fixture();
+    config.model = "opencode-go/deepseek-v4.1-flash";
+    config.env = {
+      ...config.env,
+      DEEPSEEK_API_KEY: "",
+      OPENROUTER_API_KEY: "",
+      OPENCODE_API_KEY: "opencode-go-test-key",
+    };
+    const events: ProviderEvent[] = [];
+    const session = await new DshAdapter().createSession(config);
+    session.onEvent((event) => events.push(event));
+    expect((await session.waitForCompletion()).isError).toBe(false);
+    const { patch } = await Bun.file(join(config.cwd, "invocation.json")).json();
+    expect(patch[0].config).toEqual({
+      provider: "opencode-go",
+      model: "deepseek-v4.1-flash",
+    });
+    // The adapter declares the id, so an id the bundled catalog lacks still runs.
+    expect(patch[2]).toEqual({
+      id: "llm-pi-ai",
+      config: {
+        providers: {
+          "opencode-go": {
+            apiKeyEnv: "OPENCODE_API_KEY",
+            baseURL: "https://opencode.ai/zen/go/v1",
+            api: "openai-completions",
+            models: [{ id: "deepseek-v4.1-flash" }],
+          },
+        },
+      },
+    });
+    expect(events[0]).toMatchObject({
+      type: "raw_log",
+      content: expect.stringContaining('"provider":"opencode-go"'),
+    });
+    expect(JSON.stringify(patch)).not.toContain("opencode-go-test-key");
+  });
+
+  test("declares the opencode-go effort levels and uses its catalog context window", async () => {
+    const config = await fixture("usage");
+    config.model = "opencode-go/deepseek-v4-pro";
+    config.reasoningEffort = "max";
+    config.env = {
+      ...config.env,
+      DEEPSEEK_API_KEY: "",
+      OPENROUTER_API_KEY: "",
+      OPENCODE_API_KEY: "opencode-go-test-key",
+    };
+    const events: ProviderEvent[] = [];
+    const session = await new DshAdapter().createSession(config);
+    session.onEvent((event) => events.push(event));
+    const result = await session.waitForCompletion();
+    expect(result.appliedReasoningEffort).toBe("max");
+    const { patch } = await Bun.file(join(config.cwd, "invocation.json")).json();
+    expect(patch[0].config).toEqual({
+      provider: "opencode-go",
+      model: "deepseek-v4-pro",
+      reasoningEffort: "max",
+    });
+    expect(patch[2].config.providers["opencode-go"].models).toEqual([
+      { id: "deepseek-v4-pro", reasoningEfforts: { high: "high", max: "max" } },
+    ]);
+    const context = events.filter((event) => event.type === "context_usage");
+    expect(context[0]?.contextTotalTokens).toBe(1_000_000);
+  });
 
   test("wires the swarm MCP, runs unsandboxed inside the container, and logs the model", async () => {
     const config = await fixture();
@@ -352,9 +431,14 @@ describe("dsh harness", () => {
 
   test("fails closed for absent or mismatched credentials and empty model IDs", async () => {
     const config = await fixture();
-    config.env = { ...config.env, DEEPSEEK_API_KEY: "", OPENROUTER_API_KEY: "" };
+    config.env = {
+      ...config.env,
+      DEEPSEEK_API_KEY: "",
+      OPENROUTER_API_KEY: "",
+      OPENCODE_API_KEY: "",
+    };
     await expect(new DshAdapter().createSession(config)).rejects.toThrow(
-      "DEEPSEEK_API_KEY or OPENROUTER_API_KEY",
+      "DEEPSEEK_API_KEY, OPENROUTER_API_KEY or OPENCODE_API_KEY",
     );
     config.env.DEEPSEEK_API_KEY = "direct-test-key";
     config.model = DEFAULT_MODEL_TIER_MAP.dsh.regular;
@@ -367,6 +451,15 @@ describe("dsh harness", () => {
       "requires DEEPSEEK_API_KEY",
     );
     config.model = "openrouter/";
+    await expect(new DshAdapter().createSession(config)).rejects.toThrow("requires a model ID");
+    // The OpenCode Go route needs its own key, not the DeepSeek one.
+    config.env = { ...config.env, OPENROUTER_API_KEY: "", DEEPSEEK_API_KEY: "direct-test-key" };
+    config.model = "opencode-go/deepseek-v4.1-flash";
+    await expect(new DshAdapter().createSession(config)).rejects.toThrow(
+      "requires OPENCODE_API_KEY",
+    );
+    config.env.OPENCODE_API_KEY = "opencode-go-test-key";
+    config.model = "opencode-go/";
     await expect(new DshAdapter().createSession(config)).rejects.toThrow("requires a model ID");
     expect(await Bun.file(join(config.cwd, "invocation.json")).exists()).toBe(false);
   });

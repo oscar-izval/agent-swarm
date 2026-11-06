@@ -33,14 +33,17 @@ export const REASONING_HARNESSES = [
 export type ReasoningHarnessName = (typeof REASONING_HARNESSES)[number];
 
 /**
- * A dsh model string is either `openrouter/<vendor>/<id>` (OpenRouter route) or
- * a bare DeepSeek API id such as `deepseek-v4-pro` (direct route). Its catalog
- * entry lives in the `openrouter` section for the former and the `deepseek`
- * section for the latter.
+ * A dsh model string is `openrouter/<vendor>/<id>` (OpenRouter route),
+ * `opencode-go/<id>` (OpenCode Go route), or a bare DeepSeek API id such as
+ * `deepseek-v4-pro` (direct route). Its catalog entry lives in the matching
+ * provider section.
  */
 export function dshCatalogRef(model: string): { providerId: string; modelId: string } {
   if (model.startsWith("openrouter/")) {
     return { providerId: "openrouter", modelId: model.slice("openrouter/".length) };
+  }
+  if (model.startsWith("opencode-go/")) {
+    return { providerId: "opencode-go", modelId: model.slice("opencode-go/".length) };
   }
   return { providerId: "deepseek", modelId: model };
 }
@@ -73,8 +76,13 @@ export function cursorCatalogRef(model: string): { providerId: string; modelId: 
   return { providerId: "cursor", modelId: id };
 }
 
-/** Direct DeepSeek API ids carry no vendor slash; OpenRouter ids always do. */
-function isDshDirectModel(catalogId: string): boolean {
+/**
+ * Direct DeepSeek API ids carry no vendor slash; OpenRouter ids always do. A
+ * provider id settles it where the caller knows the route (`opencode-go` ids
+ * are bare too, and that route has no real `off`).
+ */
+function isDshDirectModel(catalogId: string, providerId?: string): boolean {
+  if (providerId) return providerId === "deepseek";
   return !catalogId.includes("/");
 }
 
@@ -124,6 +132,7 @@ function applyHarnessOverrides(
   modelId: string,
   facts: ReasoningModelFacts,
   levels: ReasoningEffortLevel[],
+  providerId?: string,
 ): ReasoningEffortLevel[] {
   let result = levels;
 
@@ -145,7 +154,7 @@ function applyHarnessOverrides(
     // toggle is a real `off` there (`thinking: disabled`); on an OpenRouter
     // route an undeclared `off` sends no reasoning field at all, so the
     // model's own default (thinking on) applies and `off` would be a lie.
-    const direct = isDshDirectModel(modelId);
+    const direct = isDshDirectModel(modelId, providerId);
     const hasToggle = facts.reasoning_options?.some((o) => o.type === "toggle") ?? false;
     if (direct && hasToggle && !result.includes("off")) result = ["off", ...result];
     if (!direct) result = result.filter((l) => l !== "off");
@@ -188,16 +197,21 @@ function applyHarnessOverrides(
  *  2. A usable `type: "effort"` option → its values (`none` → `off`, `minimal` dropped).
  *  3. `reasoning: true` with no usable effort option → `low`, `medium`, `high`.
  *  4. Harness quirks on top.
+ *
+ * `providerId` is optional context for those quirks. dsh passes it when the
+ * caller already split the model string, so an `opencode-go/<id>` model is not
+ * mistaken for a direct DeepSeek id.
  */
 export function reasoningLevelsFor(
   harness: string,
   modelId: string,
   facts: ReasoningModelFacts | undefined | null,
+  providerId?: string,
 ): ReasoningEffortLevel[] {
   if (!isReasoningHarness(harness) || !facts || !facts.reasoning) return [];
   let levels = levelsFromReasoningOptions(facts.reasoning_options);
   if (levels.length === 0) levels = [...FALLBACK_LEVELS];
-  return applyHarnessOverrides(harness, modelId, facts, levels);
+  return applyHarnessOverrides(harness, modelId, facts, levels, providerId);
 }
 
 /**
@@ -225,7 +239,8 @@ export type ReasoningCatalog = Record<
  *
  * `model` is the string the harness stores: a bare id for `claude` and `codex`
  * (a Claude CLI shortname such as `opus` resolves to the newest model of its
- * family), `openrouter/<id>` or a bare DeepSeek id for `dsh` ({@link dshCatalogRef}),
+ * family), `openrouter/<id>`, `opencode-go/<id>` or a bare DeepSeek id for `dsh`
+ * ({@link dshCatalogRef}),
  * `<providerId>/<model-id>` for `pi` and `opencode`, split on the FIRST
  * slash because the id may hold more (`openrouter/google/gemini-3-flash-preview`).
  * Empty for a harness with no effort control, a model the catalog does not
@@ -258,7 +273,12 @@ export function reasoningLevelsForModel(
     providerId = model.slice(0, slash);
     catalogId = model.slice(slash + 1);
   }
-  return reasoningLevelsFor(harness, catalogId, catalog?.[providerId]?.models?.[catalogId]);
+  return reasoningLevelsFor(
+    harness,
+    catalogId,
+    catalog?.[providerId]?.models?.[catalogId],
+    providerId,
+  );
 }
 
 /**

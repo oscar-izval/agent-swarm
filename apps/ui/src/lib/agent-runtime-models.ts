@@ -211,7 +211,7 @@ export function effortLevelsFor(
   const facts =
     sectionOf(liveCatalog, providerId)?.models?.[catalogId] ??
     sectionOf(CACHE, providerId)?.models?.[catalogId];
-  return reasoningLevelsFor(harness, catalogId, facts);
+  return reasoningLevelsFor(harness, catalogId, facts, providerId);
 }
 
 /**

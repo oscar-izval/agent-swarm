@@ -13,7 +13,7 @@ Operational rules for editing or adding harness providers (claude, codex, openco
 | Devin | `devin` | `DevinAdapter` | Cloud-managed via Cognition `/sessions` API |
 | Claude Managed | `claude-managed` | `ClaudeManagedAdapter` | Anthropic managed sandbox; SSE relay |
 | ACP | `acp` | `ACPAdapter` | Curated `opencode`, `gemini`, `copilot`, `qwen`, `kiro` and `goose` presets or a custom [Agent Client Protocol](https://agentclientprotocol.com) command. Session knobs such as model use `session/set_config_option` when advertised, with target-specific startup fallbacks. No swarm-side *model-provider* credential — the target owns its own model auth. The target receives a session-scoped `aseph_` token as the swarm MCP bearer, granting that agent's swarm MCP access for up to 24 hours, so point custom targets only at binaries you trust |
-| DeepSeek Harness | `dsh` | `DshAdapter` | Spawns `dsh --profile headless --json` per task; OpenRouter or direct DeepSeek API. See [DeepSeek Harness](#deepseek-harness-dsh) below |
+| DeepSeek Harness | `dsh` | `DshAdapter` | Spawns `dsh --profile headless --json` per task; OpenRouter, OpenCode Go or direct DeepSeek API. See [DeepSeek Harness](#deepseek-harness-dsh) below |
 | Amp | `amp` | `AmpAdapter` | Spawns `amp -x --stream-json --stream-json-input` per task; `AMP_API_KEY`; every thread is stored on ampcode.com. See [Amp](#amp-amp) below |
 | Cursor | `cursor` | `CursorAdapter` | In-process `@cursor/sdk` local runtime; inference on Cursor's hosted models with `CURSOR_API_KEY`. See [Cursor](#cursor-cursor) below |
 | Grok | `grok` | `GrokAdapter` | xAI Grok CLI as an ACP server (`grok agent --no-leader stdio`) on the shared ACP client; `XAI_API_KEY`, or `OPENROUTER_API_KEY` for `openrouter/<id>` models. See [Grok](#grok-grok) below |
@@ -208,12 +208,17 @@ pi: smol/regular `openrouter/deepseek/deepseek-v4.1-flash`, smart
 Routing follows the model prefix, even when both keys are available:
 `MODEL_OVERRIDE=openrouter/<model-id>` uses the bundled `llm-pi-ai` adapter with
 `OPENROUTER_API_KEY`, strips only `openrouter/`, and honors `OPENROUTER_BASE_URL`
-(default `https://openrouter.ai/api/v1`). The selected model is explicitly declared
-so newly released IDs do not depend on the bundled catalog. For direct DeepSeek,
-set `DEEPSEEK_API_KEY` and a bare `MODEL_OVERRIDE` such as `deepseek-v4-pro`;
-this retains the native `llm-deepseek` route. The native Flash ID is
-`deepseek-flash` (V4.1 Flash); OpenRouter uses `deepseek/deepseek-v4.1-flash`.
-There is no fallback across providers when the selected route's key is missing.
+(default `https://openrouter.ai/api/v1`). `MODEL_OVERRIDE=opencode-go/<model-id>`
+uses the same adapter with `OPENCODE_API_KEY` against
+`https://opencode.ai/zen/go/v1` (an OpenAI-compatible endpoint that dsh's own
+route already wraps with the OpenCode session header). The selected model is
+explicitly declared on either route, so newly released IDs do not depend on the
+bundled catalog. For direct DeepSeek, set `DEEPSEEK_API_KEY` and a bare
+`MODEL_OVERRIDE` such as `deepseek-v4-pro`; this retains the native
+`llm-deepseek` route. The native Flash ID is `deepseek-flash` (V4.1 Flash);
+OpenRouter uses `deepseek/deepseek-v4.1-flash` and OpenCode Go uses
+`deepseek-v4.1-flash`. There is no fallback across providers when the selected
+route's key is missing.
 
 The full worker image installs `@deepseek-ai/dsh@0.2.1-rc.3` at build time
 in `worker-full-base`, alongside the optional tools in `/opt/global-deps-full`.
@@ -227,9 +232,9 @@ surface.
 The adapter launches `--profile headless --patch <temporary-file> --json -`,
 sends the task over stdin, sets the child working directory, and applies
 everything else through the profile patch. Patch files are private (`0600`) and
-removed after exit or cancellation. Credential readiness accepts either environment
-key; session startup requires the key matching the selected model. Readiness
-does not inspect dsh's managed credential store or verify inference.
+removed after exit or cancellation. Credential readiness accepts any of the three
+environment keys; session startup requires the key matching the selected model.
+Readiness does not inspect dsh's managed credential store or verify inference.
 
 What the patch sets, and why:
 
@@ -254,11 +259,12 @@ What the patch sets, and why:
   the worker container is the sandbox, as it is for codex.
 - **Reasoning effort.** `REASONING_EFFORT_OVERRIDE` (Runtime editor) becomes
   `agent-default-model.reasoningEffort`. Levels come from the catalog for the
-  model: `low`/`high`/`max` on OpenRouter DeepSeek models (the adapter declares
-  them on the model, since pi-ai treats a hand-declared model as
-  non-reasoning), plus `off` on the direct DeepSeek API, where it is a real
+  model: `low`/`high`/`max` on OpenRouter and OpenCode Go DeepSeek models (the
+  adapter declares them on the model, since pi-ai treats a hand-declared model
+  as non-reasoning), plus `off` on the direct DeepSeek API, where it is a real
   thinking toggle. `deepseek-flash` is not in the models.dev catalog, so it
-  offers no effort and is unpriced.
+  offers no effort and is unpriced. The vendored snapshot does not list
+  `opencode-go/deepseek-v4.1-flash`; its levels arrive with the live catalog.
 - **Cost and context.** Each `status.step_end.usage` (one model call) becomes a
   `context_usage` snapshot (`input + cacheRead + cacheWrite + output`), and the
   summed tokens become a `CostData` record with `provider: "dsh"` and

@@ -86,7 +86,7 @@ function splitProviderModel(model: string): { providerId: string; modelId: strin
 function lookupModel(
   harness: ReasoningHarness,
   model: string,
-): { id: string; facts: ReturnType<typeof runtimeCatalogModel> } | undefined {
+): { providerId: string; id: string; facts: ReturnType<typeof runtimeCatalogModel> } | undefined {
   if (!model) return undefined;
   let providerId: string;
   let modelId: string;
@@ -107,7 +107,7 @@ function lookupModel(
     if (!providerId) return undefined;
   }
   const facts = runtimeCatalogModel(providerId, modelId);
-  return facts ? { id: modelId, facts } : undefined;
+  return facts ? { providerId, id: modelId, facts } : undefined;
 }
 
 function pickDefault(levels: ReasoningEffort[]): ReasoningEffort | null {
@@ -123,7 +123,7 @@ function pickDefault(levels: ReasoningEffort[]): ReasoningEffort | null {
  */
 export function reasoningCapability(harness: ReasoningHarness, model: string): ReasoningCapability {
   const entry = lookupModel(harness, model);
-  const levels = entry ? reasoningLevelsFor(harness, entry.id, entry.facts) : [];
+  const levels = entry ? reasoningLevelsFor(harness, entry.id, entry.facts, entry.providerId) : [];
   if (levels.length === 0) return { supported: false, levels: [], default: null };
   return { supported: true, levels, default: pickDefault(levels) };
 }
